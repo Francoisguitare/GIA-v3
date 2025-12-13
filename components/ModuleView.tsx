@@ -6,11 +6,36 @@ interface ModuleViewProps {
   module: Module;
   onComplete: () => void;
   isLastModule: boolean;
+  isLoading?: boolean;
 }
 
-const ModuleView: React.FC<ModuleViewProps> = ({ module, onComplete, isLastModule }) => {
+const ModuleView: React.FC<ModuleViewProps> = ({ module, onComplete, isLastModule, isLoading = false }) => {
+  
+  // SKELETON LOADER
+  if (isLoading) {
+    return (
+        <div className="flex flex-col h-full bg-white rounded-l-3xl shadow-2xl overflow-hidden border-l border-slate-200 animate-pulse">
+            <div className="bg-slate-50 border-b border-slate-200 p-8 pb-6">
+                <div className="h-4 bg-slate-200 rounded w-1/4 mb-4"></div>
+                <div className="h-10 bg-slate-300 rounded w-3/4 mb-4"></div>
+                <div className="h-6 bg-slate-200 rounded w-1/2"></div>
+            </div>
+            <div className="flex-1 p-8 md:p-12 space-y-10">
+                <div className="w-full aspect-video bg-slate-200 rounded-2xl"></div>
+                <div className="space-y-4">
+                    <div className="h-8 bg-slate-200 rounded w-1/3 mb-6"></div>
+                    <div className="h-4 bg-slate-200 rounded w-full"></div>
+                    <div className="h-4 bg-slate-200 rounded w-full"></div>
+                    <div className="h-4 bg-slate-200 rounded w-5/6"></div>
+                </div>
+            </div>
+        </div>
+    );
+  }
+
+  // CONTENU RÉEL
   return (
-    <div className="flex flex-col h-full bg-white rounded-l-3xl shadow-2xl overflow-hidden border-l border-slate-200">
+    <div className="flex flex-col h-full bg-white rounded-l-3xl shadow-2xl overflow-hidden border-l border-slate-200 fade-in">
       
       {/* Header Area */}
       <div className="bg-slate-50 border-b border-slate-200 p-8 pb-6">

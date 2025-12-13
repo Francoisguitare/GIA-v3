@@ -6,17 +6,25 @@ import ModuleView from './components/ModuleView';
 import Dashboard from './components/Dashboard';
 import GameRoom from './components/GameRoom';
 import GlobalNav from './components/GlobalNav';
-import { Music4 } from 'lucide-react';
 
 export default function App() {
   const [modules, setModules] = useState<Module[]>(INITIAL_MODULES);
   const [activeModuleId, setActiveModuleId] = useState<number>(1);
   const [currentView, setCurrentView] = useState<ViewType>('dashboard');
+  const [isModuleLoading, setIsModuleLoading] = useState(false);
 
   const activeModule = modules.find(m => m.id === activeModuleId) || modules[0];
 
   const handleModuleClick = (id: number) => {
-    setActiveModuleId(id);
+    // Si on clique sur le module déjà actif, ne rien faire
+    if (id === activeModuleId) return;
+
+    setIsModuleLoading(true);
+    // Simuler un délai réseau pour l'UX
+    setTimeout(() => {
+        setActiveModuleId(id);
+        setIsModuleLoading(false);
+    }, 600);
   };
 
   const handleComplete = () => {
@@ -33,7 +41,12 @@ export default function App() {
         if (newModules[nextIndex].status === 'locked') {
           newModules[nextIndex] = { ...newModules[nextIndex], status: 'active' };
         }
-        setActiveModuleId(newModules[nextIndex].id);
+        // Petit délai aussi pour le passage au suivant
+        setIsModuleLoading(true);
+        setTimeout(() => {
+            setActiveModuleId(newModules[nextIndex].id);
+            setIsModuleLoading(false);
+        }, 600);
       }
       return newModules;
     });
@@ -97,6 +110,7 @@ export default function App() {
                   module={activeModule} 
                   onComplete={handleComplete}
                   isLastModule={activeModuleId === modules[modules.length - 1].id}
+                  isLoading={isModuleLoading}
                />
             </div>
           </div>
