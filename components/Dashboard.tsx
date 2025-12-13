@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Module, ChatMessage, Activity } from '../types';
-import { Play, TrendingUp, Trophy, Users, Send, Star, Zap } from 'lucide-react';
+import { Play, TrendingUp, Trophy, Users, Send, Star, Zap, ChevronRight, MoreHorizontal } from 'lucide-react';
 
 interface DashboardProps {
   modules: Module[];
@@ -9,15 +9,16 @@ interface DashboardProps {
 }
 
 const MOCK_CHAT: ChatMessage[] = [
-  { id: 1, user: "Martine", avatar: "https://i.pravatar.cc/150?u=1", text: "Bonjour ! Quelqu'un a réussi le barré du Fa ?", time: "10:30", isMe: false },
-  { id: 2, user: "Jean-Pierre", avatar: "https://i.pravatar.cc/150?u=2", text: "Oui ! Le secret c'est de bien tourner le poignet.", time: "10:32", isMe: false },
-  { id: 3, user: "Moi", avatar: "", text: "Merci pour le conseil Jean-Pierre !", time: "10:35", isMe: true },
+  { id: 1, user: "Martine", avatar: "https://i.pravatar.cc/150?u=1", text: "Bonjour ! Le barré du Fa ?", time: "10:30", isMe: false },
+  { id: 2, user: "Jean-Pierre", avatar: "https://i.pravatar.cc/150?u=2", text: "Tourne bien le poignet.", time: "10:32", isMe: false },
+  { id: 3, user: "Moi", avatar: "", text: "Merci Jean-Pierre !", time: "10:35", isMe: true },
 ];
 
 const MOCK_ACTIVITY: Activity[] = [
-  { id: 1, user: "Sophie D.", action: "a terminé", target: "Module 2 : Accorder", time: "Il y a 2 min", type: "progress" },
-  { id: 2, user: "Marc L.", action: "a gagné le badge", target: "Oreille Musicale", time: "Il y a 15 min", type: "achievement" },
-  { id: 3, user: "Vous", action: "avez débloqué", target: "Module 3", time: "Hier", type: "progress" },
+  { id: 1, user: "Sophie D.", action: "a terminé", target: "Module 2", time: "2 min", type: "progress" },
+  { id: 2, user: "Marc L.", action: "badge", target: "Oreille Musicale", time: "15 min", type: "achievement" },
+  { id: 3, user: "Vous", action: "débloqué", target: "Module 3", time: "Hier", type: "progress" },
+  { id: 4, user: "Paul", action: "rejoint", target: "Le cours", time: "Hier", type: "progress" },
 ];
 
 const Dashboard: React.FC<DashboardProps> = ({ modules, onResume, activeModuleId }) => {
@@ -33,126 +34,150 @@ const Dashboard: React.FC<DashboardProps> = ({ modules, onResume, activeModuleId
   };
 
   return (
-    <div className="h-full overflow-y-auto p-6 md:p-10 bg-slate-50">
-      <header className="mb-10 flex justify-between items-center">
+    <div className="h-full overflow-y-auto p-4 md:p-8 bg-slate-50">
+      <header className="mb-6 flex justify-between items-end">
         <div>
-          <h1 className="text-4xl font-black text-slate-900 mb-2">Bonjour, Michel 👋</h1>
-          <p className="text-xl text-slate-500">Prêt à faire vibrer les cordes aujourd'hui ?</p>
+          <h1 className="text-2xl md:text-3xl font-black text-slate-900">Bonjour, Michel 👋</h1>
+          <p className="text-slate-500 font-medium">Bon retour parmi nous.</p>
         </div>
-        <div className="hidden md:flex items-center gap-2 bg-white px-4 py-2 rounded-full shadow-sm border border-slate-100">
-            <span className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
-            <span className="text-sm font-bold text-slate-600">24 élèves en ligne</span>
+        <div className="hidden md:flex items-center gap-2 bg-white px-3 py-1.5 rounded-full shadow-sm border border-slate-100 text-xs font-bold text-slate-600">
+            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+            24 élèves en ligne
         </div>
       </header>
 
-      {/* Bento Grid Layout */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6 auto-rows-[minmax(180px,auto)]">
+      {/* Optimized Grid Layout */}
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
         
-        {/* HERO CARD - Resume Course (Span 2 cols) */}
-        <div className="md:col-span-2 lg:col-span-2 row-span-2 bg-gradient-to-br from-slate-900 to-slate-800 rounded-3xl p-8 flex flex-col justify-between shadow-2xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500 rounded-full filter blur-[100px] opacity-20 group-hover:opacity-30 transition-opacity"></div>
+        {/* ROW 1: Action Principale + Stats (Compact) */}
+        
+        {/* Resume Card - Wide but short (Span 3) */}
+        <div className="md:col-span-3 bg-gradient-to-r from-slate-900 to-slate-800 rounded-2xl p-6 shadow-xl relative overflow-hidden flex flex-col md:flex-row items-start md:items-center justify-between gap-6 group">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500 rounded-full filter blur-[80px] opacity-10 group-hover:opacity-20 transition-opacity pointer-events-none"></div>
           
-          <div className="relative z-10">
-            <span className="inline-block px-3 py-1 bg-amber-500/20 text-amber-400 rounded-lg text-sm font-bold mb-4 border border-amber-500/20">
-              REPRENDRE LA LEÇON
-            </span>
-            <h2 className="text-3xl md:text-4xl font-bold text-white leading-tight mb-2">
+          <div className="relative z-10 flex-1">
+            <div className="flex items-center gap-3 mb-2">
+              <span className="inline-block px-2 py-0.5 bg-amber-500 text-slate-900 rounded text-[10px] font-black uppercase tracking-wider">
+                En cours
+              </span>
+              <span className="text-slate-400 text-xs font-medium uppercase tracking-wider">Module {currentModule?.id}</span>
+            </div>
+            <h2 className="text-2xl font-bold text-white leading-tight mb-1">
               {currentModule?.title}
             </h2>
-            <p className="text-slate-400 text-lg line-clamp-2">{currentModule?.subtitle}</p>
+            <p className="text-slate-400 text-sm md:text-base line-clamp-1">{currentModule?.subtitle}</p>
           </div>
 
           <button 
             onClick={onResume}
-            className="relative z-10 w-full md:w-auto mt-6 bg-amber-500 hover:bg-amber-400 text-slate-900 px-8 py-4 rounded-xl text-xl font-bold flex items-center justify-center gap-3 transition-all transform hover:scale-[1.02] shadow-lg shadow-amber-500/25"
+            className="relative z-10 shrink-0 bg-amber-500 hover:bg-amber-400 text-slate-900 px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all transform hover:scale-[1.02] shadow-lg shadow-amber-500/20 w-full md:w-auto justify-center"
           >
-            <Play className="w-6 h-6 fill-current" />
-            Continuer le Module {currentModule?.id}
+            <Play className="w-5 h-5 fill-current" />
+            <span>Reprendre</span>
           </button>
         </div>
 
-        {/* STATS CARD - Progress */}
-        <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200 flex flex-col items-center justify-center relative overflow-hidden">
-           <div className="absolute inset-0 bg-blue-50/50"></div>
-           <div className="relative z-10 text-center">
-             <div className="relative w-32 h-32 mx-auto mb-4">
-                <svg className="w-full h-full transform -rotate-90">
-                  <circle cx="64" cy="64" r="60" stroke="#e2e8f0" strokeWidth="12" fill="none" />
-                  <circle cx="64" cy="64" r="60" stroke="#3b82f6" strokeWidth="12" fill="none" strokeDasharray={377} strokeDashoffset={377 - (377 * progress) / 100} className="transition-all duration-1000 ease-out" />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center flex-col">
-                  <span className="text-3xl font-black text-slate-800">{progress}%</span>
-                </div>
-             </div>
-             <p className="text-slate-500 font-bold uppercase tracking-wider text-sm">Progression Globale</p>
+        {/* Progress Card - Small Square (Span 1) */}
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-col items-center justify-center relative overflow-hidden h-full min-h-[140px]">
+           <div className="relative w-20 h-20">
+              <svg className="w-full h-full transform -rotate-90">
+                <circle cx="40" cy="40" r="36" stroke="#e2e8f0" strokeWidth="8" fill="none" />
+                <circle cx="40" cy="40" r="36" stroke="#3b82f6" strokeWidth="8" fill="none" strokeDasharray={226} strokeDashoffset={226 - (226 * progress) / 100} className="transition-all duration-1000 ease-out" />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-xl font-black text-slate-800">{progress}%</span>
+              </div>
            </div>
+           <p className="text-slate-500 font-bold uppercase tracking-wider text-[10px] mt-2 text-center">Progression Cursus</p>
         </div>
 
-        {/* SOCIAL CARD - Chat (Span 1 col, 2 rows) */}
-        <div className="md:row-span-2 bg-white rounded-3xl shadow-sm border border-slate-200 flex flex-col overflow-hidden">
-          <div className="p-5 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
-            <h3 className="font-bold text-slate-700 flex items-center gap-2">
-              <Users className="w-5 h-5 text-blue-500" />
-              Salle de discussion
+        {/* ROW 2: Secondary Content */}
+
+        {/* Activity Feed (Span 1 on LG) */}
+        <div className="md:col-span-1 bg-white rounded-2xl border border-slate-200 flex flex-col h-[300px]">
+          <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 rounded-t-2xl">
+            <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2">
+              <Trophy className="w-4 h-4 text-amber-600" />
+              Activité récente
             </h3>
-            <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+            <MoreHorizontal className="w-4 h-4 text-slate-400" />
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/30">
-            {chat.map(msg => (
-              <div key={msg.id} className={`flex gap-3 ${msg.isMe ? 'flex-row-reverse' : ''}`}>
-                {!msg.isMe && <img src={msg.avatar} alt={msg.user} className="w-8 h-8 rounded-full border border-slate-200" />}
-                <div className={`flex flex-col ${msg.isMe ? 'items-end' : 'items-start'}`}>
-                  <div className={`p-3 rounded-2xl max-w-[85%] text-sm ${msg.isMe ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none shadow-sm'}`}>
-                    {msg.text}
-                  </div>
-                  <span className="text-[10px] text-slate-400 mt-1">{msg.time}</span>
+          <div className="flex-1 overflow-y-auto p-3 space-y-3">
+            {MOCK_ACTIVITY.map(act => (
+              <div key={act.id} className="flex items-start gap-2.5 text-sm">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${act.type === 'achievement' ? 'bg-yellow-100 text-yellow-600' : 'bg-blue-100 text-blue-600'}`}>
+                  {act.type === 'achievement' ? <Star className="w-3 h-3 fill-current" /> : <TrendingUp className="w-3 h-3" />}
+                </div>
+                <div className="leading-tight">
+                  <p className="text-slate-700">
+                    <span className="font-bold">{act.user}</span> {act.action} <span className="font-medium text-amber-700">{act.target}</span>
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">{act.time}</p>
                 </div>
               </div>
             ))}
           </div>
-          <div className="p-3 bg-white border-t border-slate-100 flex gap-2">
+        </div>
+
+        {/* Chat (Span 2 on MD, 1 on LG) */}
+        <div className="md:col-span-2 lg:col-span-2 bg-white rounded-2xl border border-slate-200 flex flex-col h-[300px]">
+          <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50 rounded-t-2xl">
+            <h3 className="font-bold text-slate-700 text-sm flex items-center gap-2">
+              <Users className="w-4 h-4 text-blue-500" />
+              Discussion de groupe
+            </h3>
+            <div className="flex -space-x-2">
+               {[1,2,3].map(i => <div key={i} className="w-6 h-6 rounded-full bg-slate-200 border-2 border-white"></div>)}
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-slate-50/30">
+            {chat.map(msg => (
+              <div key={msg.id} className={`flex gap-2.5 ${msg.isMe ? 'flex-row-reverse' : ''}`}>
+                {!msg.isMe && <img src={msg.avatar} alt={msg.user} className="w-6 h-6 rounded-full border border-slate-200 mt-1" />}
+                <div className={`flex flex-col ${msg.isMe ? 'items-end' : 'items-start'} max-w-[80%]`}>
+                  <div className={`px-3 py-2 rounded-2xl text-sm ${msg.isMe ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-white border border-slate-200 text-slate-700 rounded-tl-none shadow-sm'}`}>
+                    {msg.text}
+                  </div>
+                  <span className="text-[10px] text-slate-400 mt-1 px-1">{msg.user} • {msg.time}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="p-3 bg-white border-t border-slate-100 flex gap-2 rounded-b-2xl">
             <input 
               type="text" 
               value={msgInput}
               onChange={(e) => setMsgInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder="Dites bonjour..." 
-              className="flex-1 bg-slate-100 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Écrire un message..." 
+              className="flex-1 bg-slate-100 rounded-full px-4 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 transition-shadow"
             />
-            <button onClick={handleSend} className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-white hover:bg-blue-700 transition-colors">
+            <button onClick={handleSend} className="w-9 h-9 bg-blue-600 rounded-full flex items-center justify-center text-white hover:bg-blue-700 transition-colors shadow-sm">
               <Send className="w-4 h-4" />
             </button>
           </div>
         </div>
 
-        {/* GAMIFICATION - Leaderboard / Activity */}
-        <div className="md:col-span-2 lg:col-span-1 bg-amber-50 rounded-3xl p-6 border border-amber-100 flex flex-col">
-          <h3 className="font-bold text-amber-900 mb-4 flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-amber-600" />
-            Derniers Exploits
-          </h3>
-          <div className="space-y-4 flex-1 overflow-y-auto pr-2">
-            {MOCK_ACTIVITY.map(act => (
-              <div key={act.id} className="flex items-start gap-3 bg-white p-3 rounded-xl border border-amber-100/50 shadow-sm">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${act.type === 'achievement' ? 'bg-yellow-100 text-yellow-600' : 'bg-blue-100 text-blue-600'}`}>
-                  {act.type === 'achievement' ? <Star className="w-4 h-4 fill-current" /> : <TrendingUp className="w-4 h-4" />}
+        {/* Tip / Widget (Span 1) */}
+        <div className="md:col-span-1 lg:col-span-1 flex flex-col gap-4">
+             <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-5 text-white shadow-md flex-1 flex flex-col justify-center items-center text-center">
+                <Zap className="w-8 h-8 mb-2 text-yellow-300 fill-current" />
+                <p className="font-bold text-sm mb-1">Le conseil du jour</p>
+                <p className="text-emerald-50 text-xs leading-relaxed">Privilégiez la régularité à la durée. 15min/jour suffisent !</p>
+            </div>
+            
+            <button className="bg-white hover:bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center justify-between group transition-colors">
+                <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                        <Users className="w-4 h-4" />
+                    </div>
+                    <div className="text-left">
+                        <p className="text-xs text-slate-500 font-bold uppercase">Communauté</p>
+                        <p className="text-sm font-bold text-slate-800">Voir les défis</p>
+                    </div>
                 </div>
-                <div>
-                  <p className="text-sm text-slate-800 leading-tight">
-                    <span className="font-bold">{act.user}</span> {act.action} <span className="font-medium text-amber-700">{act.target}</span>
-                  </p>
-                  <p className="text-xs text-slate-400 mt-1">{act.time}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* MOTIVATION */}
-        <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-3xl p-6 text-white flex flex-col justify-center items-center text-center shadow-lg group hover:scale-[1.02] transition-transform">
-           <Zap className="w-12 h-12 mb-2 text-yellow-300 fill-current animate-bounce" />
-           <p className="font-bold text-lg">Le saviez-vous ?</p>
-           <p className="text-emerald-50 text-sm mt-1">Jouer 15min par jour est plus efficace que 2h le dimanche !</p>
+                <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-600" />
+            </button>
         </div>
 
       </div>
