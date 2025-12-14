@@ -1,3 +1,4 @@
+
 import { Module } from './types';
 
 export const INITIAL_MODULES: Module[] = [
@@ -7,6 +8,7 @@ export const INITIAL_MODULES: Module[] = [
     subtitle: "Les bases pour ne pas avoir mal au dos",
     duration: "10 min",
     status: 'active',
+    type: 'standard',
     content: {
       heading: "Tenir sa guitare correctement",
       description: "Dans cette première leçon, nous allons apprendre à tenir l'instrument sans créer de tensions. C'est le secret pour jouer longtemps avec plaisir.",
@@ -23,6 +25,7 @@ export const INITIAL_MODULES: Module[] = [
     subtitle: "L'étape indispensable avant de jouer",
     duration: "15 min",
     status: 'locked',
+    type: 'standard',
     content: {
       heading: "L'accordage standard (E A D G B E)",
       description: "Une guitare bien accordée est essentielle. Nous allons utiliser un accordeur électronique pour régler chaque corde une par une.",
@@ -39,9 +42,11 @@ export const INITIAL_MODULES: Module[] = [
     subtitle: "Votre tout premier son de guitare",
     duration: "20 min",
     status: 'locked',
+    type: 'practice', // CE MODULE BLOQUERA LA SUITE TANT QUE PAS VALIDÉ
+    validationStatus: 'none',
     content: {
       heading: "L'accord de Mi Mineur (Em)",
-      description: "C'est l'accord le plus simple et le plus beau pour commencer. Il ne nécessite que deux doigts !",
+      description: "C'est l'accord le plus simple et le plus beau pour commencer. Il ne nécessite que deux doigts ! Pour valider ce module, vous devrez m'envoyer une courte vidéo.",
       tips: [
         "Utilisez l'index et le majeur.",
         "Appuyez fermement avec le bout des doigts, pas le plat.",
@@ -55,6 +60,7 @@ export const INITIAL_MODULES: Module[] = [
     subtitle: "Apprendre à battre la mesure",
     duration: "25 min",
     status: 'locked',
+    type: 'standard',
     content: {
       heading: "Le mouvement de balancier",
       description: "La main droite donne le rythme. Nous allons apprendre le mouvement 'Bas - Bas - Haut - Bas'.",
@@ -71,6 +77,7 @@ export const INITIAL_MODULES: Module[] = [
     subtitle: "Jouer 'Jeux Interdits' (Début)",
     duration: "30 min",
     status: 'locked',
+    type: 'standard',
     content: {
       heading: "Introduction à la mélodie",
       description: "Nous allons jouer les premières notes de cette mélodie célèbre. Prenez votre temps pour bien détacher chaque note.",

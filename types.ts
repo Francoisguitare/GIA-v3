@@ -1,10 +1,12 @@
-export type ModuleStatus = 'locked' | 'active' | 'completed';
+
+export type ModuleStatus = 'locked' | 'active' | 'completed' | 'pending_review'; // pending_review = Devoir envoyé
 export type ViewType = 'dashboard' | 'classroom' | 'games';
+export type LessonType = 'standard' | 'practice'; // Théorie ou Pratique
 
 export interface ModuleContent {
   heading: string;
   description: string;
-  videoId?: string; // Placeholder for video ID
+  videoId?: string;
   tips: string[];
 }
 
@@ -14,6 +16,8 @@ export interface Module {
   subtitle: string;
   duration: string;
   status: ModuleStatus;
+  type: LessonType; // Nouveau champ
+  validationStatus?: 'none' | 'submitted' | 'approved'; // État du devoir
   content: ModuleContent;
 }
 
@@ -30,7 +34,7 @@ export interface Activity {
   id: number;
   user: string;
   action: string;
-  target: string; // "Module 1", "Badge Rythme"
+  target: string;
   time: string;
   type: 'achievement' | 'progress';
 }
