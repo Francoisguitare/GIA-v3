@@ -9,6 +9,8 @@ interface ModuleCardProps {
 }
 
 const ModuleCard: React.FC<ModuleCardProps> = ({ module, isActive, onClick }) => {
+  const status: ModuleStatus = module.status || 'locked';
+
   const getStatusColor = (status: ModuleStatus) => {
     switch (status) {
       case 'completed': return 'bg-emerald-100 border-emerald-200 text-emerald-800';
@@ -25,7 +27,7 @@ const ModuleCard: React.FC<ModuleCardProps> = ({ module, isActive, onClick }) =>
     }
   };
 
-  const isLocked = module.status === 'locked';
+  const isLocked = status === 'locked';
 
   return (
     <button
@@ -33,21 +35,21 @@ const ModuleCard: React.FC<ModuleCardProps> = ({ module, isActive, onClick }) =>
       disabled={isLocked}
       className={`
         w-full text-left p-6 mb-4 rounded-xl border-2 transition-all duration-200 flex items-center gap-4 group
-        ${getStatusColor(module.status)}
+        ${getStatusColor(status)}
         ${!isLocked ? 'hover:scale-[1.02] hover:shadow-md cursor-pointer' : 'cursor-not-allowed opacity-80'}
         ${isActive ? 'scale-[1.02] shadow-md border-amber-500' : ''}
       `}
       aria-current={isActive ? 'true' : undefined}
       aria-disabled={isLocked}
     >
-      {getIcon(module.status)}
+      {getIcon(status)}
       
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between mb-1">
           <span className="text-sm font-bold uppercase tracking-wider opacity-70">
             Module {module.id}
           </span>
-          {module.status === 'completed' && (
+          {status === 'completed' && (
             <span className="text-xs font-bold bg-emerald-200 text-emerald-800 px-2 py-1 rounded-full">
               Terminé
             </span>
@@ -56,9 +58,11 @@ const ModuleCard: React.FC<ModuleCardProps> = ({ module, isActive, onClick }) =>
         <h3 className={`text-xl font-bold truncate leading-tight ${isLocked ? 'text-slate-500' : ''}`}>
           {module.title}
         </h3>
-        <p className={`text-base mt-1 truncate ${isLocked ? 'text-slate-400' : 'opacity-80'}`}>
-          {module.subtitle}
-        </p>
+        {module.subtitle && (
+          <p className={`text-base mt-1 truncate ${isLocked ? 'text-slate-400' : 'opacity-80'}`}>
+            {module.subtitle}
+          </p>
+        )}
       </div>
 
       {!isLocked && (

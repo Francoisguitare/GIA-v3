@@ -1,24 +1,34 @@
 
-export type ModuleStatus = 'locked' | 'active' | 'completed' | 'pending_review'; // pending_review = Devoir envoyé
+export type LessonStatus = 'locked' | 'active' | 'completed' | 'pending_review';
+export type ModuleStatus = 'locked' | 'active' | 'completed';
 export type ViewType = 'dashboard' | 'classroom' | 'games';
-export type LessonType = 'standard' | 'practice'; // Théorie ou Pratique
+export type LessonType = 'standard' | 'practice';
 
-export interface ModuleContent {
+export interface LessonContent {
   heading: string;
   description: string;
   videoId?: string;
   tips: string[];
 }
 
-export interface Module {
+export interface Lesson {
   id: number;
+  moduleId: number; // Lien vers le parent
   title: string;
   subtitle: string;
   duration: string;
-  status: ModuleStatus;
-  type: LessonType; // Nouveau champ
-  validationStatus?: 'none' | 'submitted' | 'approved'; // État du devoir
-  content: ModuleContent;
+  status: LessonStatus;
+  type: LessonType;
+  validationStatus?: 'none' | 'submitted' | 'approved';
+  content: LessonContent;
+}
+
+export interface Module {
+  id: number;
+  title: string;
+  subtitle?: string;
+  lessons: Lesson[];
+  status?: ModuleStatus;
 }
 
 export interface ChatMessage {

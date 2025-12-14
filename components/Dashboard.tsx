@@ -1,12 +1,12 @@
 
 import React, { useState } from 'react';
 import { Module, ChatMessage } from '../types';
-import { Play, Timer, Send, Zap, Lock, Target, MessageCircle, Flame, Hand, CheckCircle2 } from 'lucide-react';
+import { Play, Timer, Send, Zap, Lock, Target, MessageCircle, Flame, Hand } from 'lucide-react';
 
 interface DashboardProps {
-  modules: Module[];
+  modules: Module[]; 
   onResume: () => void;
-  activeModuleId: number;
+  activeLessonId: number; 
 }
 
 const MOCK_CHAT: ChatMessage[] = [
@@ -15,13 +15,15 @@ const MOCK_CHAT: ChatMessage[] = [
   { id: 3, user: "Moi", avatar: "", text: "Merci JP !", time: "10:35", isMe: true },
 ];
 
-const Dashboard: React.FC<DashboardProps> = ({ modules, onResume, activeModuleId }) => {
-  const currentModule = modules.find(m => m.id === activeModuleId);
-  const nextModules = modules.filter(m => m.id > activeModuleId).slice(0, 2);
+const Dashboard: React.FC<DashboardProps> = ({ modules, onResume, activeLessonId }) => {
+  // Aplatir les leçons pour faciliter l'affichage
+  const allLessons = modules.flatMap(m => m.lessons);
+  const currentLesson = allLessons.find(l => l.id === activeLessonId) || allLessons[0];
+  const nextLessons = allLessons.filter(l => l.id > activeLessonId).slice(0, 2);
   
-  const completedCount = modules.filter(m => m.status === 'completed').length;
-  const progress = Math.round((completedCount / modules.length) * 100);
-  const isStarted = completedCount > 0 || (currentModule && currentModule.id > 1);
+  const completedCount = allLessons.filter(l => l.status === 'completed').length;
+  const progress = Math.round((completedCount / allLessons.length) * 100);
+  const isStarted = completedCount > 0 || currentLesson.id > 1;
   
   const [msgInput, setMsgInput] = useState("");
   const [chat, setChat] = useState(MOCK_CHAT);
@@ -74,26 +76,25 @@ const Dashboard: React.FC<DashboardProps> = ({ modules, onResume, activeModuleId
                     <div className="flex-1 text-center md:text-left space-y-2">
                         <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-100 text-amber-900 rounded-full text-xs font-bold uppercase tracking-wide border border-amber-200">
                             <span className="w-2 h-2 bg-amber-600 rounded-full animate-pulse"></span>
-                            {isStarted ? "En cours" : "À démarrer"}
+                            {isStarted ? "Leçon en cours" : "À démarrer"}
                         </div>
                         <h2 className="text-3xl font-black text-slate-900 leading-tight">
-                            {currentModule?.title}
+                            {currentLesson?.title}
                         </h2>
-                        <p className="text-slate-600 font-medium text-lg">{currentModule?.subtitle}</p>
+                        <p className="text-slate-600 font-medium text-lg">{currentLesson?.subtitle}</p>
                     </div>
 
                     <button className="shrink-0 bg-slate-900 hover:bg-black text-white rounded-2xl py-4 px-8 flex items-center gap-3 shadow-lg shadow-slate-900/20 hover:shadow-xl transition-all group-hover:translate-x-1 ring-2 ring-offset-2 ring-transparent group-hover:ring-slate-900">
                         <span className="font-bold text-lg">
-                            {isStarted ? "Reprendre le cours" : "Démarrer le module"}
+                            {isStarted ? "Reprendre" : "Démarrer"}
                         </span>
                         <Play className="w-6 h-6 fill-current" />
                     </button>
                 </div>
             </div>
 
-            {/* 2. Jauges Gamification (DEMANDÉES) */}
+            {/* 2. Jauges Gamification */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Jauge Callosité */}
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3">
                     <div className="flex items-center gap-2 text-rose-600 mb-1">
                         <Hand className="w-5 h-5" />
@@ -111,11 +112,10 @@ const Dashboard: React.FC<DashboardProps> = ({ modules, onResume, activeModuleId
                     </div>
                 </div>
 
-                {/* Compteur Temps */}
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3">
                     <div className="flex items-center gap-2 text-blue-600 mb-1">
                         <Timer className="w-5 h-5" />
-                        <h3 className="font-bold text-sm uppercase tracking-wide">Temps pour moi</h3>
+                        <h3 className="font-bold text-sm uppercase tracking-wide">Temps</h3>
                     </div>
                     <div>
                         <p className="text-3xl font-black text-slate-800">2h 15</p>
@@ -125,14 +125,13 @@ const Dashboard: React.FC<DashboardProps> = ({ modules, onResume, activeModuleId
                     </div>
                 </div>
 
-                {/* Flamme Régularité */}
                 <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-3 relative overflow-hidden">
                     <div className="absolute -right-4 -bottom-4 opacity-10 text-amber-500">
                         <Flame className="w-24 h-24" />
                     </div>
                     <div className="flex items-center gap-2 text-amber-600 mb-1 relative z-10">
                         <Flame className="w-5 h-5 fill-current" />
-                        <h3 className="font-bold text-sm uppercase tracking-wide">Série en cours</h3>
+                        <h3 className="font-bold text-sm uppercase tracking-wide">Série</h3>
                     </div>
                     <div className="relative z-10">
                         <p className="text-3xl font-black text-slate-800">4 Jours</p>
@@ -147,21 +146,21 @@ const Dashboard: React.FC<DashboardProps> = ({ modules, onResume, activeModuleId
             <div className="space-y-4">
                 <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">
                     <Target className="w-5 h-5 text-indigo-500" />
-                    La suite du programme
+                    Leçons suivantes
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {nextModules.map(mod => (
-                        <div key={mod.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex items-center gap-4 opacity-100 hover:bg-white transition-colors">
+                    {nextLessons.map(lesson => (
+                        <div key={lesson.id} className="bg-slate-50 p-4 rounded-2xl border border-slate-200 flex items-center gap-4 opacity-100 hover:bg-white transition-colors">
                             <div className="w-12 h-12 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 shadow-sm">
                                 <Lock className="w-5 h-5" />
                             </div>
                             <div>
-                                <p className="text-xs font-bold text-slate-500 uppercase">Module {mod.id}</p>
-                                <p className="font-bold text-slate-700 leading-tight text-lg">{mod.title}</p>
+                                <p className="text-xs font-bold text-slate-500 uppercase">Leçon {lesson.id}</p>
+                                <p className="font-bold text-slate-700 leading-tight text-lg">{lesson.title}</p>
                             </div>
                         </div>
                     ))}
-                    {nextModules.length === 0 && (
+                    {nextLessons.length === 0 && (
                         <div className="col-span-2 p-6 bg-emerald-50 rounded-2xl border border-emerald-100 text-emerald-800 font-medium text-center">
                             Vous avez tout terminé ! 🎉
                         </div>
@@ -170,10 +169,8 @@ const Dashboard: React.FC<DashboardProps> = ({ modules, onResume, activeModuleId
             </div>
         </div>
 
-        {/* --- COLONNE SECONDAIRE (4/12) --- */}
+        {/* --- COLONNE SECONDAIRE --- */}
         <div className="lg:col-span-4 space-y-6">
-            
-            {/* Daily Tip */}
             <div className="bg-white border-l-4 border-emerald-500 shadow-sm shadow-slate-200/50 rounded-r-2xl p-6">
                 <div className="flex items-start gap-4">
                     <div className="p-2 bg-emerald-50 rounded-lg shrink-0">
@@ -188,7 +185,6 @@ const Dashboard: React.FC<DashboardProps> = ({ modules, onResume, activeModuleId
                 </div>
             </div>
 
-            {/* Chat */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
                 <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
                     <h3 className="font-bold text-slate-800 flex items-center gap-2">
@@ -197,7 +193,6 @@ const Dashboard: React.FC<DashboardProps> = ({ modules, onResume, activeModuleId
                     </h3>
                     <button className="text-xs font-bold text-blue-600 hover:underline">Voir tout</button>
                 </div>
-                
                 <div className="p-4 space-y-4 bg-white">
                     {chat.slice(0, 3).map(msg => (
                     <div key={msg.id} className="flex gap-3 text-sm">
@@ -231,7 +226,6 @@ const Dashboard: React.FC<DashboardProps> = ({ modules, onResume, activeModuleId
                     </div>
                 </div>
             </div>
-
         </div>
 
       </div>
