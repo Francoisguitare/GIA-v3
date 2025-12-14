@@ -1,6 +1,6 @@
 import React from 'react';
 import { LayoutDashboard, GraduationCap, Gamepad2, Settings, LogOut, Music4 } from 'lucide-react';
-import { ViewType } from '../types';
+import { ViewType } from '../types.ts';
 
 interface GlobalNavProps {
   currentView: ViewType;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Module, ModuleStatus } from '../types';
+import { Module, ModuleStatus } from '../types.ts';
 import { Lock, CheckCircle2, PlayCircle, ChevronRight } from 'lucide-react';
 
 interface ModuleCardProps {

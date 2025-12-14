@@ -1,5 +1,4 @@
-
-import { Module } from './types';
+import { Module } from './types.ts';
 
 export const INITIAL_MODULES: Module[] = [
   {

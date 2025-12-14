@@ -6,9 +6,10 @@
     <title>GIA - Formation Guitare</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
     
     <style>
-      /* Custom scrollbar */
       ::-webkit-scrollbar { width: 8px; }
       ::-webkit-scrollbar-track { background: transparent; }
       ::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
@@ -16,7 +17,6 @@
       
       .custom-scrollbar::-webkit-scrollbar { width: 6px; }
       
-      /* Animation utilities */
       .fade-in { animation: fadeIn 0.4s ease-out; }
       @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
       
@@ -27,40 +27,33 @@
       }
       .animate-wave { animation: wave 1.5s infinite; }
 
-      /* Animation Corde qui vibre (Loader) */
       @keyframes vibrate {
         0% { transform: scaleX(1); }
-        25% { transform: scaleX(2); } /* Vibre large */
+        25% { transform: scaleX(2); }
         50% { transform: scaleX(0.8); }
         75% { transform: scaleX(1.5); }
         100% { transform: scaleX(1); }
       }
       .vibrate-string {
         animation: vibrate 0.1s infinite;
-        background-color: #d97706; /* Amber-600 */
+        background-color: #d97706;
         box-shadow: 0 0 8px rgba(217, 119, 6, 0.6);
       }
     </style>
-    <!-- Import Map pour les modules ES - FIX RADICAL -->
-    <script type="importmap">
+<script type="importmap">
 {
   "imports": {
-    "react": "https://esm.sh/react@18.2.0",
-    "react/": "https://esm.sh/react@18.2.0/",
-    "react-dom": "https://esm.sh/react-dom@18.2.0",
-    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-    "lucide-react": "https://esm.sh/lucide-react@0.292.0?deps=react@18.2.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/"
+    "react": "https://esm.sh/react@^19.2.3",
+    "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
+    "react/": "https://esm.sh/react@^19.2.3/"
   }
 }
 </script>
-    <!-- Babel pour la compilation TSX à la volée (Dev only) -->
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body class="bg-slate-100 text-slate-900 font-sans antialiased selection:bg-amber-200 selection:text-amber-900 overflow-hidden h-screen">
     <div id="root" class="h-full"></div>
 
-    <!-- Point d'entrée de l'application modulaire -->
-    <script type="text/babel" data-type="module" src="./index.tsx"></script>
+    <!-- Script Principal Vanilla JS -->
+    <script type="module" src="./app.js"></script>
 </body>
 </html>
