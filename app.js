@@ -1,7 +1,7 @@
 
 /**
- * GIA V3.7.1 - EXPERT EDITION + MIGRATION
- * Feature: Validation Requise (Cible 🎯) avec Migration des données existantes
+ * GIA V3.8 - UX POLISH
+ * Feature: Layout Player sécurisé & Validation WhatsApp
  */
 
 // --- STATE MANAGEMENT ---
@@ -460,39 +460,49 @@ function renderClassroom() {
         </aside>
 
         <!-- Player Area -->
-        <div class="flex-1 flex flex-col relative">
-            <div class="flex-1 flex items-center justify-center p-6 lg:p-12 bg-slate-900 overflow-y-auto">
-                <div class="w-full max-w-5xl">
-                   <div class="aspect-video video-frame mb-8 shadow-2xl">
-                        ${currentLesson.wistiaId ? `
-                            <iframe src="https://fast.wistia.net/embed/iframe/${currentLesson.wistiaId}?videoFoam=true" 
-                                    title="Wistia video player" allowtransparency="true" frameborder="0" scrolling="no" class="wistia_embed" 
-                                    name="wistia_embed" allowfullscreen width="100%" height="100%"></iframe>
-                        ` : `
-                            <div class="w-full h-full bg-slate-800 flex flex-col items-center justify-center text-slate-500">
-                                <i data-lucide="video-off" class="w-16 h-16 mb-4 opacity-20"></i>
-                                <span class="text-xs font-black uppercase tracking-widest">Contenu vidéo non disponible</span>
-                            </div>
-                        `}
-                   </div>
-                   
-                   <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 text-white pb-20">
-                       <div>
-                           <div class="flex items-center gap-3 mb-2">
-                               <h1 class="text-3xl font-black">${currentLesson.title}</h1>
-                               ${currentLesson.validationRequired ? '<span title="Validation requise" class="text-2xl filter drop-shadow-md">🎯</span>' : ''}
+        <div class="flex-1 flex flex-col relative h-full overflow-hidden">
+            <div class="flex-1 bg-slate-900 overflow-y-auto custom-scrollbar relative">
+                <!-- Wrapper centré qui permet le scroll sans couper le haut (min-h-full + p-16) -->
+                <div class="min-h-full flex flex-col items-center justify-center p-8 lg:p-16">
+                    <div class="w-full max-w-5xl">
+                       <div class="aspect-video video-frame mb-8 shadow-2xl">
+                            ${currentLesson.wistiaId ? `
+                                <iframe src="https://fast.wistia.net/embed/iframe/${currentLesson.wistiaId}?videoFoam=true" 
+                                        title="Wistia video player" allowtransparency="true" frameborder="0" scrolling="no" class="wistia_embed" 
+                                        name="wistia_embed" allowfullscreen width="100%" height="100%"></iframe>
+                            ` : `
+                                <div class="w-full h-full bg-slate-800 flex flex-col items-center justify-center text-slate-500">
+                                    <i data-lucide="video-off" class="w-16 h-16 mb-4 opacity-20"></i>
+                                    <span class="text-xs font-black uppercase tracking-widest">Contenu vidéo non disponible</span>
+                                </div>
+                            `}
+                       </div>
+                       
+                       <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 text-white pb-10">
+                           <div>
+                               <div class="flex items-center gap-3 mb-2">
+                                   <h1 class="text-3xl font-black">${currentLesson.title}</h1>
+                                   ${currentLesson.validationRequired ? '<span title="Validation requise" class="text-2xl filter drop-shadow-md">🎯</span>' : ''}
+                               </div>
+                               <p class="text-slate-400 text-lg">${currentLesson.subtitle}</p>
                            </div>
-                           <p class="text-slate-400 text-lg">${currentLesson.subtitle}</p>
+                           <div class="flex items-center gap-4">
+                               <button onclick="toggleNotes()" class="bg-white/10 hover:bg-white/20 border border-white/10 px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all">
+                                   <i data-lucide="book" class="w-5 h-5"></i> Notes
+                               </button>
+                               
+                               ${currentLesson.validationRequired ? `
+                                   <button onclick="window.open('https://wa.me/?text=Bonjour,%20je%20souhaite%20valider%20la%20leçon%20${encodeURIComponent(currentLesson.title)}', '_blank')" class="bg-emerald-500 hover:bg-emerald-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-emerald-900/20 transition-all flex items-center gap-2 hover:scale-105">
+                                       <i data-lucide="message-circle" class="w-5 h-5"></i> Valider par WhatsApp
+                                   </button>
+                               ` : `
+                                   <button class="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-orange-900/20 transition-all">
+                                       SUIVANT
+                                   </button>
+                               `}
+                           </div>
                        </div>
-                       <div class="flex items-center gap-4">
-                           <button onclick="toggleNotes()" class="bg-white/10 hover:bg-white/20 border border-white/10 px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all">
-                               <i data-lucide="book" class="w-5 h-5"></i> Notes
-                           </button>
-                           <button class="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-orange-900/20 transition-all">
-                               SUIVANT
-                           </button>
-                       </div>
-                   </div>
+                    </div>
                 </div>
             </div>
             
