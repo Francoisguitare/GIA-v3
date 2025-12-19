@@ -20,41 +20,47 @@
       .fade-in { animation: fadeIn 0.4s ease-out; }
       @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
       
-      /* Ombre portée vers le haut pour le footer sticky */
-      .shadow-sticky-footer {
-        box-shadow: 0 -4px 10px rgba(0,0,0,0.1);
+      /* Ombre portée vers le haut pour le footer premium */
+      .shadow-premium-footer {
+        box-shadow: 0 -10px 25px -5px rgba(0, 0, 0, 0.1), 0 -8px 10px -6px rgba(0, 0, 0, 0.1);
       }
 
-      /* Animation Corde (Loader) */
+      /* Animation de vibration pour le loader */
       @keyframes vibrate {
         0% { transform: scaleX(1); }
-        25% { transform: scaleX(2); }
-        50% { transform: scaleX(0.8); }
-        75% { transform: scaleX(1.5); }
+        25% { transform: scaleX(1.5); }
+        50% { transform: scaleX(0.9); }
+        75% { transform: scaleX(1.2); }
         100% { transform: scaleX(1); }
       }
       .vibrate-string {
-        animation: vibrate 0.1s infinite;
-        background-color: #d97706;
-        box-shadow: 0 0 8px rgba(217, 119, 6, 0.6);
+        animation: vibrate 0.15s infinite;
+        background-color: #f97316;
+        box-shadow: 0 0 12px rgba(249, 115, 22, 0.5);
       }
 
-      /* Drawer Animation - Entrée fluide par la droite */
+      /* Transition du Drawer */
       #notes-drawer {
-        transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+      
+      /* Focus ring personnalisé pour l'accessibilité */
+      button:focus-visible {
+        outline: 3px solid #f97316;
+        outline-offset: 2px;
       }
     </style>
 <script type="importmap">
 {
   "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
-    "react/": "https://esm.sh/react@^19.2.3/"
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
   }
 }
 </script>
 </head>
-<body class="bg-slate-100 text-slate-900 font-sans antialiased selection:bg-amber-200 selection:text-amber-900 overflow-hidden h-screen">
+<body class="bg-slate-900 text-slate-900 font-sans antialiased selection:bg-orange-200 selection:text-orange-900 overflow-hidden h-screen">
     <div id="root" class="h-full"></div>
 
     <!-- Script Principal Vanilla JS -->
