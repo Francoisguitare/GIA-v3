@@ -1,11 +1,12 @@
 
 /**
- * GIA V3.7 - EXPERT EDITION
- * Ajout Feature: Validation Requise (Cible 🎯)
+ * GIA V3.7.1 - EXPERT EDITION + MIGRATION
+ * Feature: Validation Requise (Cible 🎯) avec Migration des données existantes
  */
 
 // --- STATE MANAGEMENT ---
 const DEFAULT_STATE = {
+  version: 3.71, // Versioning pour gérer les migrations
   modules: [
     {
       id: 1,
@@ -53,8 +54,31 @@ const DEFAULT_STATE = {
   }
 };
 
-// Charge le state depuis le stockage local ou utilise le défaut
-let state = JSON.parse(localStorage.getItem('gia_state')) || DEFAULT_STATE;
+// --- MIGRATION ENGINE ---
+// Corrige le problème où les anciennes données masquent les nouvelles features
+const migrateState = (savedState) => {
+  if (!savedState) return DEFAULT_STATE;
+
+  // Si la version est inférieure ou inexistante, on met à jour la structure
+  if (!savedState.version || savedState.version < 3.71) {
+    console.log("Migration des données vers V3.7.1...");
+    savedState.version = 3.71;
+    
+    // On s'assure que chaque leçon a la propriété validationRequired
+    savedState.modules.forEach(m => {
+      m.lessons.forEach(l => {
+        if (typeof l.validationRequired === 'undefined') {
+          // Par défaut false, sauf pour la leçon démo 102 (Premier Accord)
+          l.validationRequired = (l.id === 102); 
+        }
+      });
+    });
+  }
+  return savedState;
+};
+
+// Charge le state avec migration
+let state = migrateState(JSON.parse(localStorage.getItem('gia_state')));
 
 const saveState = () => {
   localStorage.setItem('gia_state', JSON.stringify(state));
@@ -262,11 +286,11 @@ function renderLessonEditor() {
                         <div class="flex items-center justify-between">
                             <div class="flex items-center gap-3">
                                 <div class="p-3 rounded-xl bg-orange-100 text-orange-600">
-                                    <span class="text-xl leading-none">🎯</span>
+                                    <span class="text-2xl leading-none filter drop-shadow-sm">🎯</span>
                                 </div>
                                 <div>
                                     <h3 class="font-black text-slate-900">Validation Requise</h3>
-                                    <p class="text-xs font-bold text-orange-400 uppercase">Devoir à rendre</p>
+                                    <p class="text-xs font-bold text-orange-500 uppercase">Devoir à rendre</p>
                                 </div>
                             </div>
                             <label class="switch">
@@ -369,7 +393,7 @@ function renderAdmin() {
                                     <div class="min-w-0 flex-1">
                                         <div class="flex items-center gap-2">
                                             <p class="text-lg font-bold text-slate-800 truncate">${l.title}</p>
-                                            ${l.validationRequired ? '<span title="Validation requise" class="text-lg">🎯</span>' : ''}
+                                            ${l.validationRequired ? '<span title="Validation requise" class="text-lg filter drop-shadow-sm">🎯</span>' : ''}
                                         </div>
                                         <div class="flex items-center gap-2 mt-1">
                                             <span class="text-[10px] font-black bg-white border border-slate-200 px-2 py-0.5 rounded text-slate-400 uppercase tracking-wider">${l.type}</span>
@@ -424,7 +448,7 @@ function renderClassroom() {
                                         <div onclick="${isLocked ? '' : `setActiveLesson(${l.id})`}" class="p-4 rounded-xl flex items-center gap-4 cursor-pointer transition-all ${isActive ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/50' : 'hover:bg-white/5 text-slate-500'} ${isLocked ? 'opacity-40 cursor-not-allowed' : ''}">
                                             <i data-lucide="${isLocked ? 'lock' : (isActive ? 'play' : 'circle')}" class="w-4 h-4 ${isActive ? 'fill-current' : ''} flex-shrink-0"></i>
                                             <span class="text-sm font-bold leading-tight flex-1">${l.title}</span>
-                                            ${l.validationRequired ? '<span title="Validation requise">🎯</span>' : ''}
+                                            ${l.validationRequired ? '<span title="Validation requise" class="text-lg filter drop-shadow-sm">🎯</span>' : ''}
                                         </div>
                                     `;
                                 }).join('')}
@@ -456,7 +480,7 @@ function renderClassroom() {
                        <div>
                            <div class="flex items-center gap-3 mb-2">
                                <h1 class="text-3xl font-black">${currentLesson.title}</h1>
-                               ${currentLesson.validationRequired ? '<span title="Validation requise" class="text-2xl">🎯</span>' : ''}
+                               ${currentLesson.validationRequired ? '<span title="Validation requise" class="text-2xl filter drop-shadow-md">🎯</span>' : ''}
                            </div>
                            <p class="text-slate-400 text-lg">${currentLesson.subtitle}</p>
                        </div>
