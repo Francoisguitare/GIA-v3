@@ -19,29 +19,32 @@
       .fade-in { animation: fadeIn 0.4s ease-out; }
       @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       
-      /* Cadre Vidéo "Cinema" */
+      /* Cadre Vidéo Cinema pour Wistia */
       .video-frame {
         border: 12px solid #1e293b;
         border-radius: 1.5rem;
-        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), inset 0 2px 4px rgba(255,255,255,0.1);
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6), inset 0 2px 4px rgba(255,255,255,0.1);
         overflow: hidden;
         position: relative;
+        background: #000;
       }
 
-      /* Ombre portée du footer */
       .shadow-sticky-footer {
         box-shadow: 0 -10px 40px rgba(0,0,0,0.1);
       }
 
-      /* Drawer Animation */
       #notes-drawer {
         transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
       }
 
-      /* Admin Grid Background */
       .bg-admin {
-        background-image: radial-gradient(#e2e8f0 1px, transparent 1px);
-        background-size: 20px 20px;
+        background-image: radial-gradient(#e2e8f0 1.5px, transparent 1.5px);
+        background-size: 30px 30px;
+      }
+
+      /* Animation bouton admin */
+      .btn-admin-active {
+        box-shadow: 0 0 15px rgba(79, 70, 229, 0.4);
       }
     </style>
 <script type="importmap">
