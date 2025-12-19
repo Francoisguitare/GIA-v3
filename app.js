@@ -1,6 +1,7 @@
 
 /**
  * GIA - APPLICATION VANILLA JS PREMIUM
+ * Optimisé pour Seniors (40-70 ans)
  */
 
 // --- DONNÉES ---
@@ -35,8 +36,8 @@ const INITIAL_MODULES = [
         hasVideo: true,
         content: {
           heading: "L'accordage standard (E A D G B E)",
-          description: "Une guitare bien accordée est essentielle. Nous allons utiliser un accordeur électronique.",
-          tips: ["Commencez par la corde grave (Mi).", "Tournez doucement.", "Visez l'aiguille verte."]
+          description: "Une guitare bien accordée est essentielle. Nous allons utiliser un accordeur électronique pour régler chaque corde une par une.",
+          tips: ["Commencez par la corde grave.", "Tournez doucement.", "Visez l'aiguille verte."]
         }
       }
     ]
@@ -52,28 +53,28 @@ const INITIAL_MODULES = [
         subtitle: "Votre tout premier son de guitare",
         duration: "20 min",
         status: 'locked',
-        type: 'practice', // 🎯 Devoir (Canvas Mode)
+        type: 'practice', // 🎯 Devoir
         hasVideo: false,
         validationStatus: 'none',
         content: {
           heading: "L'accord de Mi Mineur (Em)",
-          description: "C'est l'accord le plus simple et le plus beau pour commencer. Il ne nécessite que deux doigts ! Pour valider ce module, vous devrez m'envoyer une courte vidéo.",
+          description: "C'est l'accord le plus simple et le plus beau pour commencer. Il ne nécessite que deux doigts !",
           tips: ["Utilisez l'index et le majeur.", "Appuyez avec le bout des doigts.", "Grattez tout d'un coup."]
         }
       },
       {
         id: 4,
         moduleId: 200,
-        title: "Rythmique de Base",
-        subtitle: "Apprendre à battre la mesure",
-        duration: "25 min",
+        title: "Quiz Rythmique",
+        subtitle: "Vérifions vos connaissances",
+        duration: "5 min",
         status: 'locked',
-        type: 'standard',
-        hasVideo: true,
+        type: 'text', // 📝 Texte/Quiz
+        hasVideo: false,
         content: {
-          heading: "Le mouvement de balancier",
-          description: "La main droite donne le rythme. Nous allons apprendre le mouvement 'Bas - Bas - Haut - Bas'.",
-          tips: ["Poignet souple.", "Respirez.", "Comptez 1, 2, 3, 4."]
+          heading: "Le rythme en 4 temps",
+          description: "Saurez-vous identifier le temps fort dans cette mesure ? Lisez bien les consignes ci-dessous.",
+          tips: ["Le premier temps est fort.", "Comptez à haute voix.", "Battez du pied."]
         }
       }
     ]
@@ -86,11 +87,7 @@ const state = {
   activeLessonId: 1,
   currentView: 'classroom',
   expandedModules: [100],
-  isNotesOpen: false,
-  isFullscreen: false,
-  chat: [
-    { id: 1, user: "Martine", avatar: "https://i.pravatar.cc/150?u=1", text: "Le barré du Fa ?", time: "10:30", isMe: false }
-  ]
+  isNotesOpen: false
 };
 
 // --- ACTIONS GLOBALES ---
@@ -114,7 +111,6 @@ window.setActiveLesson = (lessonId) => {
   const lesson = all.find(l => l.id === lessonId);
   if (!lesson || lesson.status === 'locked') return;
   
-  // Petit loader
   const playerZone = document.getElementById('player-zone');
   if(playerZone) playerZone.innerHTML = renderLoader();
   
@@ -134,24 +130,17 @@ window.completeLesson = () => {
   const currentIdx = all.findIndex(l => l.id === state.activeLessonId);
   const currentLesson = all[currentIdx];
 
-  if (currentLesson.type === 'practice' && (!currentLesson.validationStatus || currentLesson.validationStatus === 'none')) {
-    currentLesson.status = 'pending_review';
-    currentLesson.validationStatus = 'submitted';
-  } else {
-    currentLesson.status = 'completed';
-    if (currentIdx + 1 < all.length) {
-      const nextLesson = all[currentIdx + 1];
-      if (nextLesson.status === 'locked') {
-        nextLesson.status = 'active';
-        if (!state.expandedModules.includes(nextLesson.moduleId)) {
-          state.expandedModules.push(nextLesson.moduleId);
-        }
-      }
-      setTimeout(() => {
-        state.activeLessonId = nextLesson.id;
-        render();
-      }, 300);
+  currentLesson.status = 'completed';
+  if (currentIdx + 1 < all.length) {
+    const nextLesson = all[currentIdx + 1];
+    nextLesson.status = 'active';
+    if (!state.expandedModules.includes(nextLesson.moduleId)) {
+      state.expandedModules.push(nextLesson.moduleId);
     }
+    setTimeout(() => {
+      state.activeLessonId = nextLesson.id;
+      render();
+    }, 300);
   }
   render();
 };
@@ -159,7 +148,7 @@ window.completeLesson = () => {
 // --- RENDER HELPERS ---
 
 function renderLoader() {
-  return `<div class="flex flex-col h-full bg-slate-900 items-center justify-center"><div class="vibrate-string w-24 h-1 rounded-full mb-4"></div><p class="text-slate-400 font-bold">Préparation...</p></div>`;
+  return `<div class="flex flex-col h-full bg-slate-900 items-center justify-center"><div class="vibrate-string w-24 h-1 rounded-full mb-4"></div><p class="text-slate-400 font-bold">Chargement...</p></div>`;
 }
 
 function renderNav() {
@@ -188,7 +177,7 @@ function renderClassroom() {
   const lesson = allLessons.find(l => l.id === state.activeLessonId) || allLessons[0];
   const isLast = lesson.id === allLessons[allLessons.length - 1].id;
 
-  // 1. Sidebar (Menu Gauche)
+  // --- 1. SIDEBAR (MENU GAUCHE) ---
   const sidebarHTML = state.modules.map(mod => {
     const isExpanded = state.expandedModules.includes(mod.id);
     return `
@@ -204,15 +193,17 @@ function renderClassroom() {
                     const isLocked = l.status === 'locked';
                     const isCompleted = l.status === 'completed';
                     
-                    // Icone de type de contenu
+                    // Iconographie par type de contenu
                     let typeIcon = 'video';
                     if (l.type === 'practice') typeIcon = 'target';
                     if (l.type === 'text') typeIcon = 'file-text';
 
                     return `
                         <div onclick="${isLocked ? '' : `setActiveLesson(${l.id})`}" 
-                             class="pl-6 pr-4 py-5 flex items-center gap-4 cursor-pointer border-l-[4px] transition-all ${isActive ? 'bg-amber-500/10 border-amber-500' : 'border-transparent hover:bg-white/5'} ${isLocked ? 'opacity-30 cursor-not-allowed' : ''}">
-                            <i data-lucide="${typeIcon}" class="w-5 h-5 ${isActive ? 'text-amber-500' : 'text-slate-500'}"></i>
+                             class="pl-6 pr-4 py-6 flex items-center gap-4 cursor-pointer border-l-[4px] transition-all 
+                             ${isActive ? 'bg-white/5 border-orange-500' : 'border-transparent hover:bg-white/5'} 
+                             ${isLocked ? 'opacity-30 cursor-not-allowed' : ''}">
+                            <i data-lucide="${typeIcon}" class="w-5 h-5 ${isActive ? 'text-orange-500' : 'text-slate-500'}"></i>
                             <div class="flex-1">
                                 <p class="text-[16px] font-bold ${isActive ? 'text-white' : 'text-slate-300'} leading-tight">${l.title}</p>
                                 <span class="text-xs text-slate-500">${l.duration}</span>
@@ -227,147 +218,150 @@ function renderClassroom() {
     `;
   }).join('');
 
-  // 2. Scène Centrale (Vidéo ou Canvas)
+  // --- 2. SCÈNE CENTRALE (VIDÉO OU MODE CANVAS) ---
   let centralSceneHTML = '';
   if (lesson.hasVideo) {
     centralSceneHTML = `
       <div class="relative w-full h-full bg-black flex items-center justify-center group">
           <img src="https://picsum.photos/seed/${lesson.id}/1200/675" class="w-full h-full object-contain opacity-40" />
           <div class="absolute inset-0 flex items-center justify-center">
-              <button class="w-24 h-24 bg-amber-500/90 rounded-full flex items-center justify-center shadow-[0_0_50px_rgba(245,158,11,0.4)] hover:scale-110 transition-transform">
+              <button class="w-24 h-24 bg-orange-500/90 rounded-full flex items-center justify-center shadow-[0_0_50px_rgba(249,115,22,0.4)] hover:scale-110 transition-transform">
                   <i data-lucide="play" class="w-10 h-10 text-white fill-current ml-1"></i>
               </button>
           </div>
       </div>
     `;
   } else {
+    // MODE CANVAS : Carte de contenu centrée
     centralSceneHTML = `
-      <div class="w-full h-full bg-slate-900 flex items-center justify-center p-8">
-          <div class="bg-white rounded-3xl p-10 shadow-2xl max-w-2xl w-full fade-in flex flex-col items-center text-center">
-              <div class="w-20 h-20 bg-indigo-100 text-indigo-600 rounded-2xl flex items-center justify-center mb-6">
-                  <i data-lucide="target" class="w-10 h-10"></i>
+      <div class="w-full h-full bg-slate-900 flex items-center justify-center p-8 overflow-y-auto">
+          <div class="bg-white rounded-2xl p-10 shadow-2xl max-w-[800px] w-full fade-in flex flex-col items-center text-center">
+              <div class="w-20 h-20 ${lesson.type === 'practice' ? 'bg-indigo-100 text-indigo-600' : 'bg-amber-100 text-amber-600'} rounded-2xl flex items-center justify-center mb-6">
+                  <i data-lucide="${lesson.type === 'practice' ? 'target' : 'file-text'}" class="w-10 h-10"></i>
               </div>
               <h2 class="text-3xl font-black text-slate-900 mb-4">${lesson.content.heading}</h2>
-              <p class="text-xl text-slate-600 leading-relaxed mb-8">${lesson.content.description}</p>
-              <button onclick="completeLesson()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-10 py-4 rounded-2xl text-xl font-bold shadow-xl transition-all hover:scale-105 flex items-center gap-3">
-                  <i data-lucide="video" class="w-6 h-6"></i>
-                  Lancer l'exercice pratique
-              </button>
+              <p class="text-xl text-slate-600 leading-relaxed mb-8">
+                ${lesson.content.description}
+              </p>
+              ${lesson.type === 'practice' ? `
+                <button onclick="completeLesson()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-10 py-4 rounded-2xl text-xl font-bold shadow-xl transition-all hover:scale-105 flex items-center gap-3">
+                  <i data-lucide="video" class="w-6 h-6"></i> Envoyer mon travail
+                </button>
+              ` : `
+                <div class="p-6 bg-slate-50 border border-slate-200 rounded-xl w-full text-left">
+                  <h4 class="font-bold text-slate-800 mb-2">Consignes :</h4>
+                  <p class="text-slate-600">Complétez la lecture pour valider ce module. N'oubliez pas de consulter les notes de cours.</p>
+                </div>
+              `}
           </div>
       </div>
     `;
   }
 
-  // 3. Barre d'Action (Sticky Footer)
-  const isPending = lesson.status === 'pending_review';
-  const isCompleted = lesson.status === 'completed';
-
+  // --- 3. BARRE D'ACTION (STICKY FOOTER) ---
   const actionButtonsHTML = `
-    <div class="flex items-center gap-4">
-        <button onclick="toggleNotes()" class="flex items-center gap-2 bg-white border-2 border-slate-200 hover:border-slate-400 text-slate-700 px-6 py-3 rounded-xl font-bold transition-all">
+    <div class="flex items-center gap-5">
+        <!-- Bouton OUTLINE "Lire le cours" -->
+        <button onclick="toggleNotes()" class="flex items-center gap-3 bg-white border-2 border-[#CBD5E1] hover:border-slate-400 text-slate-700 px-7 py-3.5 rounded-xl font-bold transition-all shadow-sm">
             <i data-lucide="book-open" class="w-5 h-5 text-blue-600"></i>
-            <span>Lire le cours</span>
+            <span class="text-lg">Lire le cours</span>
         </button>
-        ${isCompleted ? `
-            <div class="bg-emerald-50 text-emerald-700 px-6 py-3 rounded-xl font-bold flex items-center gap-2 border border-emerald-200">
-                <i data-lucide="check" class="w-5 h-5"></i> Terminé
-            </div>
-        ` : isPending ? `
-            <div class="bg-amber-50 text-amber-700 px-6 py-3 rounded-xl font-bold border border-amber-200">En attente de validation...</div>
+        
+        <!-- Bouton SOLID "J'ai terminé" -->
+        ${lesson.status === 'completed' ? `
+          <div class="bg-emerald-50 text-emerald-700 px-7 py-3.5 rounded-xl font-bold flex items-center gap-2 border border-emerald-200 shadow-sm">
+              <i data-lucide="check" class="w-6 h-6"></i> Terminé
+          </div>
         ` : `
-            <button onclick="completeLesson()" class="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-xl font-black text-lg shadow-lg transition-all hover:scale-105 flex items-center gap-2">
-                <span>J'ai terminé, suite</span>
-                <i data-lucide="${isLast ? 'check' : 'chevron-right'}" class="w-5 h-5"></i>
-            </button>
+          <button onclick="completeLesson()" class="bg-[#F97316] hover:bg-[#EA580C] text-white px-10 py-3.5 rounded-xl font-black text-xl shadow-lg transition-all hover:scale-105 flex items-center gap-3">
+              <span>J'ai terminé, suite</span>
+              <i data-lucide="${isLast ? 'check' : 'chevron-right'}" class="w-6 h-6"></i>
+          </button>
         `}
     </div>
   `;
 
   return `
     <div class="flex h-full relative overflow-hidden bg-[#1a1a1a]">
-        <!-- Sidebar Menu -->
+        <!-- SIDEBAR (MENU GAUCHE) -->
         <aside class="w-[340px] h-full flex flex-col bg-[#1a1a1a] border-r border-white/5 shadow-2xl z-20 overflow-y-auto custom-scrollbar">
             <div class="p-6 border-b border-white/10 bg-[#262626]">
-                <h2 class="text-sm font-black text-white tracking-widest uppercase flex items-center gap-2">
-                    <i data-lucide="folder-open" class="w-4 h-4 text-amber-500"></i> Mon Programme
+                <h2 class="text-xs font-black text-white tracking-widest uppercase flex items-center gap-2">
+                    <i data-lucide="folder-open" class="w-4 h-4 text-orange-500"></i> Mon Programme
                 </h2>
             </div>
             <div class="flex-1">${sidebarHTML}</div>
         </aside>
 
-        <!-- Player & Actions -->
+        <!-- PLAYER & ACTIONS -->
         <div class="flex-1 flex flex-col relative h-full">
             <div id="player-zone" class="flex-1 overflow-hidden relative">${centralSceneHTML}</div>
             
-            <!-- Sticky Action Bar -->
-            <footer class="bg-white p-6 md:px-10 border-t border-slate-200 shadow-[0_-10px_40px_rgba(0,0,0,0.08)] z-30 flex items-center justify-between">
+            <!-- STICKY ACTION BAR (FOOTER) -->
+            <footer class="bg-white p-6 md:px-10 border-t border-slate-200 shadow-sticky-footer z-30 flex items-center justify-between">
                 <div>
-                    <h1 class="text-2xl font-black text-slate-900 leading-tight">${lesson.title}</h1>
-                    <p class="text-slate-500 font-medium">${lesson.subtitle}</p>
+                    <h2 class="text-2xl font-black text-slate-900 leading-tight">${lesson.title}</h2>
+                    <p class="text-slate-500 font-medium text-lg">${lesson.subtitle}</p>
                 </div>
                 ${actionButtonsHTML}
             </footer>
 
-            <!-- Side Drawer (Notes) -->
-            <div id="notes-drawer" class="fixed top-0 right-0 h-full w-[40%] min-w-[400px] bg-white shadow-2xl z-[100] transform transition-transform duration-300 ${state.isNotesOpen ? 'translate-x-0' : 'translate-x-full'}">
+            <!-- SIDE DRAWER (NOTES) -->
+            <div id="notes-drawer" class="fixed top-0 right-0 h-full w-[40%] min-w-[400px] bg-white shadow-2xl z-[100] transform transition-transform duration-400 ${state.isNotesOpen ? 'translate-x-0' : 'translate-x-full'}">
                 <div class="h-full flex flex-col">
                     <div class="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50">
                         <h3 class="text-xl font-black text-slate-800 flex items-center gap-3">
-                            <i data-lucide="file-text" class="text-amber-500"></i> Contenu de la leçon
+                            <i data-lucide="book" class="text-orange-500"></i> Contenu de la leçon
                         </h3>
-                        <button onclick="toggleNotes()" class="p-2 hover:bg-slate-200 rounded-full transition-colors">
-                            <i data-lucide="x" class="w-6 h-6 text-slate-500"></i>
+                        <button onclick="toggleNotes()" class="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400 hover:text-slate-600">
+                            <i data-lucide="x" class="w-7 h-7"></i>
                         </button>
                     </div>
-                    <div class="flex-1 overflow-y-auto p-10 prose prose-slate max-w-none">
-                        <h2 class="text-3xl font-black text-slate-900 mb-6">${lesson.content.heading}</h2>
-                        <p class="text-lg text-slate-700 leading-relaxed mb-8">${lesson.content.description}</p>
-                        <div class="bg-amber-50 border-l-4 border-amber-500 p-8 rounded-xl">
-                            <h4 class="text-amber-900 font-bold mb-4 flex items-center gap-2">
-                                <i data-lucide="lightbulb" class="w-5 h-5"></i> Conseils du coach
+                    <div class="flex-1 overflow-y-auto p-12 prose prose-slate max-w-none">
+                        <h1 class="text-3xl font-black text-slate-900 mb-6">${lesson.content.heading}</h1>
+                        <p class="text-xl text-slate-700 leading-relaxed mb-8">${lesson.content.description}</p>
+                        
+                        <div class="bg-amber-50 border-l-8 border-orange-500 p-8 rounded-2xl mb-10 shadow-sm">
+                            <h4 class="text-orange-900 font-black text-xl mb-6 flex items-center gap-3">
+                                <i data-lucide="lightbulb" class="w-6 h-6"></i> Conseils du coach
                             </h4>
-                            <ul class="space-y-4">
+                            <ul class="space-y-5">
                                 ${lesson.content.tips.map(t => `
-                                    <li class="flex items-start gap-3 text-slate-700">
-                                        <i data-lucide="check-circle" class="w-5 h-5 text-amber-600 mt-1 shrink-0"></i>
-                                        <span class="text-lg">${t}</span>
+                                    <li class="flex items-start gap-4 text-slate-700">
+                                        <i data-lucide="check-circle" class="w-6 h-6 text-orange-600 mt-1 shrink-0"></i>
+                                        <span class="text-xl">${t}</span>
                                     </li>
                                 `).join('')}
                             </ul>
                         </div>
-                        <div class="mt-10 pt-10 border-t border-slate-100">
-                            <button class="w-full py-4 border-2 border-dashed border-slate-300 rounded-2xl text-slate-500 hover:border-slate-500 hover:text-slate-700 transition-all font-bold flex items-center justify-center gap-3">
-                                <i data-lucide="download" class="w-5 h-5"></i> Télécharger la partition PDF
+
+                        <div class="mt-12 pt-10 border-t border-slate-100">
+                            <button class="w-full py-6 border-2 border-dashed border-slate-300 rounded-2xl text-slate-500 hover:border-slate-500 hover:text-slate-700 transition-all font-bold flex items-center justify-center gap-4 text-lg">
+                                <i data-lucide="download" class="w-6 h-6"></i> 
+                                Télécharger la partition PDF
                             </button>
                         </div>
                     </div>
                 </div>
             </div>
+            
+            <!-- Overlay pour fermer le drawer -->
             ${state.isNotesOpen ? `<div onclick="toggleNotes()" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-[90] fade-in"></div>` : ''}
         </div>
     </div>
   `;
 }
 
-// --- DASHBOARD & GAMES (Placeholders) ---
-function renderDashboard() {
-  return `<div class="h-full flex items-center justify-center bg-slate-50"><div class="text-center"><h1 class="text-4xl font-black text-slate-800 mb-4">Tableau de Bord</h1><button onclick="setView('classroom')" class="bg-slate-900 text-white px-8 py-3 rounded-xl font-bold">Reprendre mon cours</button></div></div>`;
-}
-
-function renderGames() {
-  return `<div class="h-full flex items-center justify-center bg-slate-50"><h1 class="text-4xl font-black text-slate-800">Salle de Jeux 🕹️</h1></div>`;
-}
-
-// --- MOTEUR DE RENDU ---
+// --- RENDER ENGINE ---
 function render() {
   const root = document.getElementById('root');
   if(!root) return;
 
   let mainContent = '';
   switch (state.currentView) {
-    case 'dashboard': mainContent = renderDashboard(); break;
     case 'classroom': mainContent = renderClassroom(); break;
-    case 'games': mainContent = renderGames(); break;
+    case 'dashboard': mainContent = `<div class="p-10 text-center"><h1>Accueil</h1><button onclick="setView('classroom')" class="p-4 bg-orange-500 text-white rounded mt-4">Retour au cours</button></div>`; break;
+    case 'games': mainContent = `<div class="p-10 text-center"><h1>Jeux</h1></div>`; break;
     default: mainContent = '<div>404</div>';
   }
 
@@ -382,4 +376,3 @@ function render() {
 }
 
 document.addEventListener("DOMContentLoaded", render);
-if (document.readyState === "complete" || document.readyState === "interactive") render();

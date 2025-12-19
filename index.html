@@ -20,12 +20,10 @@
       .fade-in { animation: fadeIn 0.4s ease-out; }
       @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
       
-      @keyframes wave {
-          0%, 100% { transform: rotate(0deg); }
-          25% { transform: rotate(15deg); }
-          75% { transform: rotate(-10deg); }
+      /* Ombre portée vers le haut pour le footer sticky */
+      .shadow-sticky-footer {
+        box-shadow: 0 -4px 10px rgba(0,0,0,0.1);
       }
-      .animate-wave { animation: wave 1.5s infinite; }
 
       /* Animation Corde (Loader) */
       @keyframes vibrate {
@@ -41,16 +39,17 @@
         box-shadow: 0 0 8px rgba(217, 119, 6, 0.6);
       }
 
-      /* Drawer Animation */
-      .drawer-enter { transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-      .drawer-enter-active { transform: translateX(0); }
+      /* Drawer Animation - Entrée fluide par la droite */
+      #notes-drawer {
+        transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      }
     </style>
 <script type="importmap">
 {
   "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "react/": "https://esm.sh/react@^19.2.3/"
   }
 }
 </script>
