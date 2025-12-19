@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GIA - Formation Guitare</title>
+    <title>GIA - Formation Guitare (Premium)</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
@@ -27,6 +27,7 @@
       }
       .animate-wave { animation: wave 1.5s infinite; }
 
+      /* Animation Corde (Loader) */
       @keyframes vibrate {
         0% { transform: scaleX(1); }
         25% { transform: scaleX(2); }
@@ -39,13 +40,17 @@
         background-color: #d97706;
         box-shadow: 0 0 8px rgba(217, 119, 6, 0.6);
       }
+
+      /* Drawer Animation */
+      .drawer-enter { transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+      .drawer-enter-active { transform: translateX(0); }
     </style>
 <script type="importmap">
 {
   "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
-    "react/": "https://esm.sh/react@^19.2.3/"
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
   }
 }
 </script>

@@ -1,3 +1,4 @@
+
 import { Module } from './types.ts';
 
 export const INITIAL_MODULES: Module[] = [
@@ -13,6 +14,8 @@ export const INITIAL_MODULES: Module[] = [
         duration: "10 min",
         status: 'active',
         type: 'standard',
+        // Fix: Added missing hasVideo property
+        hasVideo: true,
         content: {
           heading: "Tenir sa guitare correctement",
           description: "Dans cette première leçon, nous allons apprendre à tenir l'instrument sans créer de tensions. C'est le secret pour jouer longtemps avec plaisir.",
@@ -31,6 +34,8 @@ export const INITIAL_MODULES: Module[] = [
         duration: "15 min",
         status: 'locked',
         type: 'standard',
+        // Fix: Added missing hasVideo property
+        hasVideo: true,
         content: {
           heading: "L'accordage standard (E A D G B E)",
           description: "Une guitare bien accordée est essentielle. Nous allons utiliser un accordeur électronique pour régler chaque corde une par une.",
@@ -55,6 +60,8 @@ export const INITIAL_MODULES: Module[] = [
         duration: "20 min",
         status: 'locked',
         type: 'practice', // Validation requise
+        // Fix: Added missing hasVideo property
+        hasVideo: false,
         validationStatus: 'none',
         content: {
           heading: "L'accord de Mi Mineur (Em)",
@@ -74,6 +81,8 @@ export const INITIAL_MODULES: Module[] = [
         duration: "25 min",
         status: 'locked',
         type: 'standard',
+        // Fix: Added missing hasVideo property
+        hasVideo: true,
         content: {
           heading: "Le mouvement de balancier",
           description: "La main droite donne le rythme. Nous allons apprendre le mouvement 'Bas - Bas - Haut - Bas'.",
@@ -98,6 +107,8 @@ export const INITIAL_MODULES: Module[] = [
         duration: "30 min",
         status: 'locked',
         type: 'standard',
+        // Fix: Added missing hasVideo property
+        hasVideo: true,
         content: {
           heading: "Introduction à la mélodie",
           description: "Nous allons jouer les premières notes de cette mélodie célèbre. Prenez votre temps pour bien détacher chaque note.",
