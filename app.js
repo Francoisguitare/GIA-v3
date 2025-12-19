@@ -1,7 +1,7 @@
 
 /**
- * GIA V3.4 - EXPERT EDITION
- * Spécialement optimisé pour l'interactivité Admin et l'intégration Wistia.
+ * GIA V3.5 - STABLE & FLUID
+ * Correction du "Flash Blanc" lors de l'édition texte.
  */
 
 // --- DONNÉES ---
@@ -30,7 +30,7 @@ let state = {
   currentView: 'dashboard',
   expandedModules: [1],
   isNotesOpen: false,
-  editingLessonId: null, // Si null, la modale d'édition est fermée
+  editingLessonId: null,
   user: {
     name: "Jean-Pierre",
     progression: 15,
@@ -39,7 +39,7 @@ let state = {
   }
 };
 
-// --- FONCTIONS CORE (WINDOWS) ---
+// --- FONCTIONS CORE ---
 window.setView = (view) => {
   state.currentView = view;
   state.editingLessonId = null;
@@ -74,18 +74,25 @@ window.closeEditor = () => {
   render();
 };
 
+/**
+ * CORRECTION FLASH BLANC :
+ * On ne relance pas render() pour les champs textes (titre, contenu, wistiaId).
+ * Le DOM natif gère l'affichage pendant la frappe, on met juste à jour le state en background.
+ * On relance render() UNIQUEMENT pour le toggle 'isLocked' car il change l'icone et la couleur.
+ */
 window.updateLesson = (lessonId, field, value) => {
   state.modules.forEach(mod => {
     const lesson = mod.lessons.find(l => l.id === lessonId);
     if (lesson) {
       if (field === 'isLocked') {
         lesson.status = value ? 'locked' : 'active';
+        render(); // Re-render nécessaire pour le visuel (Switch/Cadenas)
       } else {
         lesson[field] = value;
+        // PAS DE RENDER() ICI -> Empêche le flash et la perte de focus
       }
     }
   });
-  render();
 };
 
 window.addFile = (lessonId) => {
@@ -132,7 +139,7 @@ window.addLesson = (chapterId) => {
   }
 };
 
-// --- RENDU UI COMPOSANTS ---
+// --- RENDU UI ---
 
 function renderLessonEditor() {
   const lesson = state.modules.flatMap(m => m.lessons).find(l => l.id === state.editingLessonId);
