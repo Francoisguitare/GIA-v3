@@ -1,7 +1,7 @@
 
 /**
- * GIA V3.6 - ULTIMATE PERFORMANCE
- * Architecture "No-Reflow" pour l'édition de texte & Persistance locale.
+ * GIA V3.7 - EXPERT EDITION
+ * Ajout Feature: Validation Requise (Cible 🎯)
  */
 
 // --- STATE MANAGEMENT ---
@@ -20,8 +20,22 @@ const DEFAULT_STATE = {
           status: 'active', 
           hasVideo: true, 
           wistiaId: '30q789',
+          validationRequired: false,
           content: "Dans cette leçon, nous allons aborder la posture idéale pour éviter les douleurs lombaires...",
           files: [{ name: "Guide_Posture.pdf", url: "#" }]
+        },
+        { 
+            id: 102, 
+            title: "Premier Accord (Test)", 
+            subtitle: "Validation des acquis", 
+            duration: "5m", 
+            type: 'practice', 
+            status: 'locked', 
+            hasVideo: false, 
+            wistiaId: '',
+            validationRequired: true,
+            content: "Envoyez une vidéo de votre premier accord.",
+            files: []
         }
       ]
     }
@@ -67,7 +81,7 @@ window.setActiveLesson = (id) => {
 window.toggleNotes = () => {
   state.isNotesOpen = !state.isNotesOpen;
   saveState();
-  render(); // Nécessaire pour l'animation du drawer
+  render();
 };
 
 window.toggleModule = (id) => {
@@ -78,8 +92,6 @@ window.toggleModule = (id) => {
 };
 
 // --- ADMIN : ÉDITION "SILENCIEUSE" (NO RENDER) ---
-// Ces fonctions mettent à jour le state SANS redessiner tout le DOM
-// Cela empêche la perte de focus et le "flash blanc"
 
 window.updateLessonTitle = (id, value) => {
   const l = findLesson(id);
@@ -108,7 +120,16 @@ window.toggleLessonLock = (id, isChecked) => {
   if(l) {
     l.status = isChecked ? 'locked' : 'active';
     saveState();
-    render(); // Re-render pour changer l'icône et la couleur
+    render();
+  }
+};
+
+window.toggleLessonValidation = (id, isChecked) => {
+  const l = findLesson(id);
+  if(l) {
+    l.validationRequired = isChecked;
+    saveState();
+    render(); // Re-render pour afficher/masquer la cible
   }
 };
 
@@ -139,6 +160,7 @@ window.addLesson = (chapterId) => {
       status: 'locked',
       hasVideo: true,
       wistiaId: '',
+      validationRequired: false,
       content: '',
       files: []
     });
@@ -212,7 +234,7 @@ function renderLessonEditor() {
                 </div>
 
                 <!-- Settings Sidebar -->
-                <div class="col-span-12 lg:col-span-5 space-y-8">
+                <div class="col-span-12 lg:col-span-5 space-y-6">
                     
                     <!-- Status Card -->
                     <div class="p-6 rounded-2xl border-4 ${lesson.status === 'locked' ? 'border-slate-100 bg-slate-50' : 'border-emerald-100 bg-emerald-50/50'} transition-colors">
@@ -230,6 +252,25 @@ function renderLessonEditor() {
                             </div>
                             <label class="switch">
                                 <input type="checkbox" ${lesson.status !== 'locked' ? 'checked' : ''} onchange="toggleLessonLock(${lesson.id}, !this.checked)">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Validation Config (New) -->
+                    <div class="bg-orange-50/50 p-6 rounded-2xl border-4 border-orange-100/50">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="p-3 rounded-xl bg-orange-100 text-orange-600">
+                                    <span class="text-xl leading-none">🎯</span>
+                                </div>
+                                <div>
+                                    <h3 class="font-black text-slate-900">Validation Requise</h3>
+                                    <p class="text-xs font-bold text-orange-400 uppercase">Devoir à rendre</p>
+                                </div>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" ${lesson.validationRequired ? 'checked' : ''} onchange="toggleLessonValidation(${lesson.id}, this.checked)">
                                 <span class="slider"></span>
                             </label>
                         </div>
@@ -325,8 +366,11 @@ function renderAdmin() {
                                     <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${l.status === 'locked' ? 'bg-slate-200 text-slate-400' : 'bg-emerald-100 text-emerald-600'}">
                                         <i data-lucide="${l.status === 'locked' ? 'lock' : 'check-circle'}" class="w-5 h-5"></i>
                                     </div>
-                                    <div class="min-w-0">
-                                        <p class="text-lg font-bold text-slate-800 truncate">${l.title}</p>
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex items-center gap-2">
+                                            <p class="text-lg font-bold text-slate-800 truncate">${l.title}</p>
+                                            ${l.validationRequired ? '<span title="Validation requise" class="text-lg">🎯</span>' : ''}
+                                        </div>
                                         <div class="flex items-center gap-2 mt-1">
                                             <span class="text-[10px] font-black bg-white border border-slate-200 px-2 py-0.5 rounded text-slate-400 uppercase tracking-wider">${l.type}</span>
                                             <span class="text-[10px] font-bold text-slate-400">${l.duration}</span>
@@ -351,9 +395,6 @@ function renderAdmin() {
     </div>
   `;
 }
-
-// ... Les autres vues (Dashboard, Classroom, Profile) restent inchangées visuellement mais utilisent le state
-// Je les inclus pour la complétude
 
 function renderClassroom() {
   const currentLesson = findLesson(state.activeLessonId);
@@ -381,8 +422,9 @@ function renderClassroom() {
                                     const isLocked = l.status === 'locked';
                                     return `
                                         <div onclick="${isLocked ? '' : `setActiveLesson(${l.id})`}" class="p-4 rounded-xl flex items-center gap-4 cursor-pointer transition-all ${isActive ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/50' : 'hover:bg-white/5 text-slate-500'} ${isLocked ? 'opacity-40 cursor-not-allowed' : ''}">
-                                            <i data-lucide="${isLocked ? 'lock' : (isActive ? 'play' : 'circle')}" class="w-4 h-4 ${isActive ? 'fill-current' : ''}"></i>
-                                            <span class="text-sm font-bold leading-tight">${l.title}</span>
+                                            <i data-lucide="${isLocked ? 'lock' : (isActive ? 'play' : 'circle')}" class="w-4 h-4 ${isActive ? 'fill-current' : ''} flex-shrink-0"></i>
+                                            <span class="text-sm font-bold leading-tight flex-1">${l.title}</span>
+                                            ${l.validationRequired ? '<span title="Validation requise">🎯</span>' : ''}
                                         </div>
                                     `;
                                 }).join('')}
@@ -412,7 +454,10 @@ function renderClassroom() {
                    
                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 text-white pb-20">
                        <div>
-                           <h1 class="text-3xl font-black mb-2">${currentLesson.title}</h1>
+                           <div class="flex items-center gap-3 mb-2">
+                               <h1 class="text-3xl font-black">${currentLesson.title}</h1>
+                               ${currentLesson.validationRequired ? '<span title="Validation requise" class="text-2xl">🎯</span>' : ''}
+                           </div>
                            <p class="text-slate-400 text-lg">${currentLesson.subtitle}</p>
                        </div>
                        <div class="flex items-center gap-4">
@@ -434,7 +479,10 @@ function renderClassroom() {
                     <button onclick="toggleNotes()" class="p-2 hover:bg-slate-200 rounded-full text-slate-400 hover:text-slate-900 transition-colors"><i data-lucide="x" class="w-6 h-6"></i></button>
                 </div>
                 <div class="flex-1 overflow-y-auto p-8 prose prose-slate max-w-none">
-                    <h2 class="text-3xl font-black mb-6">${currentLesson.title}</h2>
+                    <h2 class="text-3xl font-black mb-6 flex items-center gap-3">
+                        ${currentLesson.title}
+                        ${currentLesson.validationRequired ? '🎯' : ''}
+                    </h2>
                     <div class="text-lg text-slate-600 leading-relaxed whitespace-pre-wrap mb-10">${currentLesson.content || "Aucune note disponible."}</div>
                     
                     ${currentLesson.files.length > 0 ? `
