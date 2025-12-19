@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GIA - Formation Guitare (Premium)</title>
+    <title>GIA - Plateforme Elite</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Lucide Icons -->
@@ -13,57 +13,49 @@
       ::-webkit-scrollbar { width: 8px; }
       ::-webkit-scrollbar-track { background: transparent; }
       ::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 4px; }
-      ::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
       
       .custom-scrollbar::-webkit-scrollbar { width: 6px; }
       
       .fade-in { animation: fadeIn 0.4s ease-out; }
-      @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+      @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
       
-      /* Ombre portée vers le haut pour le footer premium */
-      .shadow-premium-footer {
-        box-shadow: 0 -10px 25px -5px rgba(0, 0, 0, 0.1), 0 -8px 10px -6px rgba(0, 0, 0, 0.1);
+      /* Cadre Vidéo "Cinema" */
+      .video-frame {
+        border: 12px solid #1e293b;
+        border-radius: 1.5rem;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), inset 0 2px 4px rgba(255,255,255,0.1);
+        overflow: hidden;
+        position: relative;
       }
 
-      /* Animation de vibration pour le loader */
-      @keyframes vibrate {
-        0% { transform: scaleX(1); }
-        25% { transform: scaleX(1.5); }
-        50% { transform: scaleX(0.9); }
-        75% { transform: scaleX(1.2); }
-        100% { transform: scaleX(1); }
-      }
-      .vibrate-string {
-        animation: vibrate 0.15s infinite;
-        background-color: #f97316;
-        box-shadow: 0 0 12px rgba(249, 115, 22, 0.5);
+      /* Ombre portée du footer */
+      .shadow-sticky-footer {
+        box-shadow: 0 -10px 40px rgba(0,0,0,0.1);
       }
 
-      /* Transition du Drawer */
+      /* Drawer Animation */
       #notes-drawer {
-        transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
       }
-      
-      /* Focus ring personnalisé pour l'accessibilité */
-      button:focus-visible {
-        outline: 3px solid #f97316;
-        outline-offset: 2px;
+
+      /* Admin Grid Background */
+      .bg-admin {
+        background-image: radial-gradient(#e2e8f0 1px, transparent 1px);
+        background-size: 20px 20px;
       }
     </style>
 <script type="importmap">
 {
   "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
-    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "react/": "https://esm.sh/react@^19.2.3/"
   }
 }
 </script>
 </head>
-<body class="bg-slate-900 text-slate-900 font-sans antialiased selection:bg-orange-200 selection:text-orange-900 overflow-hidden h-screen">
+<body class="bg-slate-50 text-slate-900 font-sans antialiased selection:bg-orange-200 overflow-hidden h-screen">
     <div id="root" class="h-full"></div>
-
-    <!-- Script Principal Vanilla JS -->
     <script type="module" src="./app.js"></script>
 </body>
 </html>
