@@ -1,20 +1,21 @@
 
 /**
- * GIA V4.0 - SYSTEM EDITION
- * Feature: Multi-User Auth, Role Management, Student Tracking
+ * GIA V4.1 - LMS EDITION
+ * Feature: Multi-User Auth, Role Management, Student Tracking, Private Platform
  */
 
-// --- MOCK DATABASE & STATE ---
+// --- CONFIGURATION PAR DÉFAUT ---
 
 const DEFAULT_DB = {
-  version: 4.0,
-  currentUser: null, // null = logged out
+  version: 4.1, // Version bump pour forcer la migration
+  currentUser: null, // null = personne n'est connecté
+  // Base de données initiale des utilisateurs
   users: [
     {
       id: 1,
       name: "Formateur (Admin)",
       email: "admin@gia.com",
-      password: "admin", // Pour démo
+      password: "admin", 
       role: 'admin',
       avatar: "https://i.pravatar.cc/150?u=admin",
       progression: 100
@@ -65,43 +66,66 @@ const DEFAULT_DB = {
     }
   ],
   activeLessonId: 101,
-  currentView: 'login', // Default view is login
+  currentView: 'login', // On commence toujours par le login
   expandedModules: [1],
   isNotesOpen: false,
   editingLessonId: null,
 };
 
-// --- CORE ENGINE ---
+// --- CORE ENGINE & MIGRATION ---
 
-// Charge ou initialise la "Base de données"
-let state = JSON.parse(localStorage.getItem('gia_state')) || DEFAULT_DB;
+// 1. Récupération de l'état existant
+let savedState = null;
+try {
+    savedState = JSON.parse(localStorage.getItem('gia_state'));
+} catch (e) {
+    console.error("Erreur lecture sauvegarde", e);
+}
 
-// Migration si version ancienne
-if (!state.version || state.version < 4.0) {
-    console.log("Migration V4.0...");
-    // On conserve les modules existants mais on restructure les users
-    const oldModules = state.modules || DEFAULT_DB.modules;
-    state = { ...DEFAULT_DB, modules: oldModules };
+// 2. Logique de Migration (Aggressive pour V4.1)
+let state;
+
+// Si pas de sauvegarde OU version obsolète (inférieure à 4.1)
+if (!savedState || !savedState.version || savedState.version < 4.1) {
+    console.log("--- MIGRATION MAJEURE V4.1 ---");
+    // On conserve les leçons existantes si elles existent, sinon on prend celles par défaut
+    const existingModules = (savedState && savedState.modules) ? savedState.modules : DEFAULT_DB.modules;
+    
+    // On réinitialise TOUT le reste (Users, Auth, Views) pour garantir que le système Admin fonctionne
+    state = {
+        ...DEFAULT_DB,
+        modules: existingModules
+    };
+    
+    // On force la sauvegarde immédiate
+    localStorage.setItem('gia_state', JSON.stringify(state));
+} else {
+    state = savedState;
 }
 
 const saveState = () => {
   localStorage.setItem('gia_state', JSON.stringify(state));
 };
 
-// Helper pour récupérer l'utilisateur connecté
-const getCurrentUser = () => state.users.find(u => u.id === state.currentUser);
+// Helper : Qui est connecté ?
+const getCurrentUser = () => {
+    if(!state.currentUser) return null;
+    return state.users.find(u => u.id === state.currentUser);
+};
 
-// --- AUTH ACTIONS ---
+// --- AUTHENTIFICATION & UTILISATEURS ---
 
 window.login = (email, password) => {
-    const user = state.users.find(u => u.email === email && u.password === password);
+    // Recherche de l'utilisateur
+    const user = state.users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
+    
     if (user) {
         state.currentUser = user.id;
         state.currentView = 'dashboard';
         saveState();
-        render();
+        render(); // Rechargement complet
     } else {
-        alert("Email ou mot de passe incorrect.\n(Essai Admin: admin@gia.com / admin)\n(Essai Élève: eleve@gia.com / 123)");
+        alert("Identifiants incorrects.\n\nRappel Démo :\nFormateur : admin@gia.com / admin\nÉlève : eleve@gia.com / 123");
     }
 };
 
@@ -112,35 +136,45 @@ window.logout = () => {
     render();
 };
 
-window.createUser = (name, email, password) => {
-    if(!name || !email || !password) return alert("Tous les champs sont requis");
+// Création d'élève (ADMIN SEULEMENT)
+window.createStudent = (name, email, password) => {
+    if(!name || !email || !password) return alert("Veuillez remplir tous les champs.");
     
-    const newUser = {
+    // Vérification doublon email
+    if(state.users.find(u => u.email.toLowerCase() === email.toLowerCase())) {
+        return alert("Cet email est déjà utilisé par un autre élève.");
+    }
+
+    const newStudent = {
         id: Date.now(),
-        name,
-        email,
-        password,
+        name: name,
+        email: email,
+        password: password, // En prod, on ne stocke jamais les mdp en clair, mais ok pour démo locale
         role: 'student',
         avatar: `https://i.pravatar.cc/150?u=${Date.now()}`,
         progression: 0,
         points: 0
     };
-    
-    state.users.push(newUser);
+
+    state.users.push(newStudent);
     saveState();
-    render(); // Re-render admin view
-    // Close modal logic handled in render via re-render
+    
+    // Fermeture modal et rafraichissement
+    document.getElementById('add-student-modal').classList.add('hidden');
+    render(); 
+    alert(`Compte créé pour ${name} !\nIl peut se connecter avec :\nEmail: ${email}\nMdp: ${password}`);
 };
 
 window.deleteUser = (id) => {
-    if(confirm("Supprimer cet élève définitivement ?")) {
+    if(confirm("Êtes-vous sûr de vouloir supprimer cet élève ? Cette action est irréversible.")) {
         state.users = state.users.filter(u => u.id !== id);
         saveState();
         render();
     }
 };
 
-// --- GLOBAL ACTIONS ---
+
+// --- ACTIONS GLOBALES ---
 
 window.setView = (view) => {
   state.currentView = view;
@@ -170,8 +204,7 @@ window.toggleModule = (id) => {
   render();
 };
 
-// --- ADMIN ACTIONS ---
-// (Identiques à avant, mais protégées par la vue)
+// --- ACTIONS ÉDITION CONTENU (ADMIN) ---
 
 window.updateLessonTitle = (id, value) => { const l = findLesson(id); if(l) { l.title = value; saveState(); } };
 window.updateLessonContent = (id, value) => { const l = findLesson(id); if(l) { l.content = value; saveState(); } };
@@ -188,7 +221,7 @@ window.addChapter = () => {
 };
 
 window.deleteChapter = (id) => {
-  if(confirm("Supprimer définitivement ce chapitre ?")) {
+  if(confirm("Supprimer ce chapitre ?")) {
     state.modules = state.modules.filter(m => m.id !== id);
     saveState();
     render();
@@ -227,77 +260,95 @@ window.removeFile = (lessonId, fileName) => {
 window.openEditor = (id) => { state.editingLessonId = id; render(); };
 window.closeEditor = () => { state.editingLessonId = null; render(); };
 
-// Helpers
+// Helper
 const findLesson = (id) => state.modules.flatMap(m => m.lessons).find(l => l.id === id);
 
 
-// --- VIEWS ---
+// --- VUES (TEMPLATES) ---
 
+// 1. LOGIN SCREEN (La première chose qu'on voit)
 function renderLogin() {
     return `
-    <div class="min-h-screen bg-slate-900 flex items-center justify-center p-4 fade-in">
-        <div class="bg-white w-full max-w-md rounded-3xl p-8 shadow-2xl relative overflow-hidden">
-            <div class="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 to-orange-500"></div>
-            
+    <div class="min-h-screen bg-slate-900 flex items-center justify-center p-4 fade-in relative overflow-hidden">
+        <!-- Deco Background -->
+        <div class="absolute top-0 left-0 w-full h-full overflow-hidden z-0 opacity-20 pointer-events-none">
+             <div class="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-600 rounded-full blur-[100px]"></div>
+             <div class="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-orange-600 rounded-full blur-[100px]"></div>
+        </div>
+
+        <div class="bg-white w-full max-w-md rounded-[2.5rem] p-8 md:p-12 shadow-2xl relative z-10">
             <div class="text-center mb-10">
-                <div class="w-16 h-16 bg-slate-900 text-white rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl">
-                    <i data-lucide="music-4" class="w-8 h-8 text-orange-400"></i>
+                <div class="w-20 h-20 bg-slate-900 text-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-slate-300">
+                    <i data-lucide="music-4" class="w-10 h-10 text-orange-400"></i>
                 </div>
-                <h1 class="text-3xl font-black text-slate-900">Bienvenue sur GIA</h1>
-                <p class="text-slate-400 font-medium">Connectez-vous à votre espace</p>
+                <h1 class="text-3xl font-black text-slate-900 mb-2">GIA Élite</h1>
+                <p class="text-slate-400 font-bold uppercase text-xs tracking-widest">Plateforme de formation privée</p>
             </div>
 
             <form onsubmit="event.preventDefault(); login(this.email.value, this.password.value);" class="space-y-6">
                 <div>
-                    <label class="block text-xs font-black uppercase text-slate-400 mb-2 tracking-widest">Email</label>
+                    <label class="block text-xs font-black uppercase text-slate-400 mb-2 tracking-widest ml-2">Email</label>
                     <input type="email" name="email" required 
                            class="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-xl focus:border-indigo-500 focus:bg-white outline-none transition-all font-bold text-slate-700"
                            placeholder="votre@email.com" />
                 </div>
                 <div>
-                    <label class="block text-xs font-black uppercase text-slate-400 mb-2 tracking-widest">Mot de passe</label>
+                    <label class="block text-xs font-black uppercase text-slate-400 mb-2 tracking-widest ml-2">Mot de passe</label>
                     <input type="password" name="password" required 
                            class="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-xl focus:border-indigo-500 focus:bg-white outline-none transition-all font-bold text-slate-700"
                            placeholder="••••••••" />
                 </div>
                 
-                <button type="submit" class="w-full bg-slate-900 text-white py-4 rounded-xl font-black text-lg shadow-xl hover:translate-y-[-2px] transition-all flex items-center justify-center gap-2">
+                <button type="submit" class="w-full bg-slate-900 text-white py-5 rounded-xl font-black text-lg shadow-xl shadow-slate-300 hover:translate-y-[-2px] hover:shadow-2xl transition-all flex items-center justify-center gap-2">
                     Se connecter <i data-lucide="arrow-right" class="w-5 h-5"></i>
                 </button>
             </form>
             
-            <div class="mt-8 pt-6 border-t border-slate-100 text-center">
-                <p class="text-xs text-slate-400">Pour la démo :<br>Admin: admin@gia.com / admin<br>Élève: eleve@gia.com / 123</p>
+            <div class="mt-8 pt-6 border-t border-slate-100 text-center space-y-2">
+                <p class="text-xs text-slate-400 font-bold uppercase tracking-wider">Accès Démo</p>
+                <div class="flex gap-2 justify-center text-[10px] text-slate-500 font-mono bg-slate-50 p-2 rounded-lg inline-block">
+                    <span>admin@gia.com (admin)</span>
+                    <span class="text-slate-300">|</span>
+                    <span>eleve@gia.com (123)</span>
+                </div>
             </div>
         </div>
     </div>
     `;
 }
 
+// 2. GESTION DES ÉLÈVES (ADMIN)
 function renderStudentManagement() {
+    // On ne récupère que les élèves, pas l'admin
     const students = state.users.filter(u => u.role === 'student');
     
     return `
     <div class="h-full bg-admin-grid p-8 lg:p-12 overflow-y-auto fade-in">
-        <header class="flex justify-between items-center mb-12 max-w-6xl mx-auto">
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 max-w-6xl mx-auto gap-6">
             <div>
                 <h1 class="text-4xl font-black text-slate-900 mb-2">Mes Apprentis</h1>
-                <p class="text-slate-500 font-bold uppercase tracking-widest">Suivi et gestion des comptes</p>
+                <p class="text-slate-500 font-bold uppercase tracking-widest">Gérez les accès à votre formation</p>
             </div>
-            <!-- Add Student Trigger -->
-            <button onclick="document.getElementById('add-student-modal').classList.remove('hidden')" class="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black flex items-center gap-2 shadow-lg hover:bg-indigo-700 transition-all">
-                <i data-lucide="user-plus" class="w-5 h-5"></i> Ajouter
+            <!-- Bouton Ajouter un élève -->
+            <button onclick="document.getElementById('add-student-modal').classList.remove('hidden')" class="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-lg shadow-indigo-200 hover:scale-105 transition-all">
+                <i data-lucide="user-plus" class="w-5 h-5"></i> Ajouter un élève
             </button>
         </header>
 
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
             ${students.map(student => `
-                <div class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-xl hover:shadow-2xl transition-all group">
+                <div class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-xl hover:shadow-2xl transition-all group relative overflow-hidden">
+                    <div class="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                         <button onclick="deleteUser(${student.id})" class="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-colors" title="Supprimer l'accès">
+                            <i data-lucide="trash-2" class="w-4 h-4"></i>
+                         </button>
+                    </div>
+
                     <div class="flex items-center gap-4 mb-6">
-                        <img src="${student.avatar}" class="w-16 h-16 rounded-2xl border-2 border-slate-50" />
-                        <div>
-                            <h3 class="text-xl font-black text-slate-900 leading-tight">${student.name}</h3>
-                            <p class="text-xs text-slate-400 font-mono">${student.email}</p>
+                        <img src="${student.avatar}" class="w-16 h-16 rounded-2xl border-2 border-slate-50 shadow-sm" />
+                        <div class="min-w-0">
+                            <h3 class="text-xl font-black text-slate-900 leading-tight truncate">${student.name}</h3>
+                            <p class="text-xs text-slate-400 font-bold truncate">${student.email}</p>
                         </div>
                     </div>
                     
@@ -319,55 +370,71 @@ function renderStudentManagement() {
                         </div>
                     </div>
 
-                    <div class="flex gap-2">
-                        <button onclick="alert('Fonctionnalité message à venir')" class="flex-1 py-2 rounded-lg border border-slate-200 font-bold text-slate-600 hover:bg-slate-50 text-sm">Contacter</button>
-                        <button onclick="deleteUser(${student.id})" class="p-2 rounded-lg bg-red-50 text-red-500 hover:bg-red-100"><i data-lucide="trash-2" class="w-5 h-5"></i></button>
-                    </div>
+                    <button onclick="window.location.href='mailto:${student.email}'" class="w-full py-3 rounded-xl border-2 border-slate-100 font-bold text-slate-600 hover:border-slate-900 hover:text-slate-900 transition-all flex items-center justify-center gap-2 text-sm">
+                        <i data-lucide="mail" class="w-4 h-4"></i> Envoyer un email
+                    </button>
                 </div>
             `).join('')}
             
-            ${students.length === 0 ? `<div class="col-span-full text-center py-20 text-slate-400 font-bold">Aucun apprenti pour le moment.</div>` : ''}
+            <!-- Empty State -->
+            ${students.length === 0 ? `
+                <div class="col-span-full py-20 text-center">
+                    <div class="inline-block p-6 bg-slate-100 rounded-full mb-4 text-slate-400">
+                        <i data-lucide="users" class="w-12 h-12"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-slate-900">Aucun élève inscrit</h3>
+                    <p class="text-slate-500 mt-2">Cliquez sur "Ajouter un élève" pour créer le premier compte.</p>
+                </div>
+            ` : ''}
         </div>
 
-        <!-- Modal Ajout Élève -->
+        <!-- Modal Ajout Élève (Caché par défaut) -->
         <div id="add-student-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onclick="this.parentElement.classList.add('hidden')"></div>
-            <div class="bg-white w-full max-w-md rounded-3xl p-8 relative z-10 shadow-2xl">
-                <h3 class="text-2xl font-black text-slate-900 mb-6">Nouvel Apprenti</h3>
-                <form onsubmit="event.preventDefault(); createUser(this.name.value, this.email.value, this.password.value);" class="space-y-4">
+            <div class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm transition-opacity" onclick="this.parentElement.classList.add('hidden')"></div>
+            <div class="bg-white w-full max-w-md rounded-[2rem] p-8 relative z-10 shadow-2xl scale-100 transition-transform">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-2xl font-black text-slate-900">Nouvel Apprenti</h3>
+                    <button onclick="document.getElementById('add-student-modal').classList.add('hidden')" class="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-900"><i data-lucide="x" class="w-6 h-6"></i></button>
+                </div>
+                
+                <form onsubmit="event.preventDefault(); createStudent(this.name.value, this.email.value, this.password.value);" class="space-y-4">
                     <div>
-                        <label class="text-xs font-bold uppercase text-slate-400">Nom complet</label>
-                        <input name="name" type="text" required class="w-full bg-slate-50 border p-3 rounded-xl font-bold">
+                        <label class="text-xs font-bold uppercase text-slate-400 ml-2 mb-1 block">Nom complet</label>
+                        <input name="name" type="text" required placeholder="ex: Thomas Durand" class="w-full bg-slate-50 border-2 border-slate-100 p-3 rounded-xl font-bold focus:border-indigo-500 outline-none">
                     </div>
                     <div>
-                        <label class="text-xs font-bold uppercase text-slate-400">Email</label>
-                        <input name="email" type="email" required class="w-full bg-slate-50 border p-3 rounded-xl font-bold">
+                        <label class="text-xs font-bold uppercase text-slate-400 ml-2 mb-1 block">Email (Identifiant)</label>
+                        <input name="email" type="email" required placeholder="thomas@mail.com" class="w-full bg-slate-50 border-2 border-slate-100 p-3 rounded-xl font-bold focus:border-indigo-500 outline-none">
                     </div>
                     <div>
-                        <label class="text-xs font-bold uppercase text-slate-400">Mot de passe provisoire</label>
-                        <input name="password" type="text" required class="w-full bg-slate-50 border p-3 rounded-xl font-bold">
+                        <label class="text-xs font-bold uppercase text-slate-400 ml-2 mb-1 block">Mot de passe provisoire</label>
+                        <input name="password" type="text" required placeholder="ex: Guitare2024!" class="w-full bg-slate-50 border-2 border-slate-100 p-3 rounded-xl font-bold focus:border-indigo-500 outline-none">
                     </div>
-                    <button class="w-full bg-indigo-600 text-white py-3 rounded-xl font-black mt-4 shadow-lg hover:bg-indigo-700">Créer le compte</button>
+                    
+                    <div class="pt-4">
+                        <button class="w-full bg-indigo-600 text-white py-4 rounded-xl font-black shadow-lg shadow-indigo-200 hover:translate-y-[-2px] transition-all">
+                            Créer le compte
+                        </button>
+                        <p class="text-[10px] text-center text-slate-400 mt-4">L'élève pourra modifier son mot de passe plus tard.</p>
+                    </div>
                 </form>
-                <button onclick="document.getElementById('add-student-modal').classList.add('hidden')" class="absolute top-4 right-4 text-slate-400 hover:text-slate-900"><i data-lucide="x"></i></button>
             </div>
         </div>
     </div>
     `;
 }
 
-// --- STANDARD VIEWS (Updates with currentUser data) ---
-
+// 3. DASHBOARD
 function renderDashboard() {
   const user = getCurrentUser();
   return `
     <div class="h-full overflow-y-auto p-8 lg:p-12 bg-slate-50 fade-in">
-        <header class="mb-12 flex justify-between items-start">
+        <header class="mb-12 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
                 <h1 class="text-4xl lg:text-6xl font-black text-slate-900 mb-4">Bonjour ${user.name.split(' ')[0]}</h1>
                 <p class="text-xl text-slate-500">Prêt à faire sonner votre guitare aujourd'hui ?</p>
             </div>
-            ${user.role === 'admin' ? '<span class="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-black uppercase tracking-widest border border-indigo-200">Mode Formateur</span>' : ''}
+            ${user.role === 'admin' ? '<span class="bg-indigo-900 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-200">Mode Formateur</span>' : ''}
         </header>
         
         <div class="grid grid-cols-12 gap-8">
@@ -405,12 +472,13 @@ function renderDashboard() {
   `;
 }
 
+// 4. CLASSROOM (Lecteur)
 function renderClassroom() {
   const currentLesson = findLesson(state.activeLessonId);
   if(!currentLesson) { state.activeLessonId = state.modules[0]?.lessons[0]?.id; render(); return ''; }
   
-  // Is Admin ?
-  const isAdmin = getCurrentUser()?.role === 'admin';
+  const currentUser = getCurrentUser();
+  const isAdmin = currentUser && currentUser.role === 'admin';
 
   return `
     <div class="flex h-full bg-slate-900">
@@ -430,7 +498,7 @@ function renderClassroom() {
                             <div class="space-y-1 mt-1">
                                 ${mod.lessons.map(l => {
                                     const isActive = l.id === state.activeLessonId;
-                                    const isLocked = l.status === 'locked' && !isAdmin; // Admin voit tout unlocked
+                                    const isLocked = l.status === 'locked' && !isAdmin; // Admin voit tout déverrouillé
                                     return `
                                         <div onclick="${isLocked ? '' : `setActiveLesson(${l.id})`}" class="p-4 rounded-xl flex items-center gap-4 cursor-pointer transition-all ${isActive ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/50' : 'hover:bg-white/5 text-slate-500'} ${isLocked ? 'opacity-40 cursor-not-allowed' : ''}">
                                             <i data-lucide="${isLocked ? 'lock' : (isActive ? 'play' : 'circle')}" class="w-4 h-4 ${isActive ? 'fill-current' : ''} flex-shrink-0"></i>
@@ -530,212 +598,13 @@ function renderClassroom() {
   `;
 }
 
-// Les fonctions renderLessonEditor et renderAdmin restent identiques, mais Admin est accessible uniquement aux admins
-
-function renderLessonEditor() {
-  const lesson = findLesson(state.editingLessonId);
-  if (!lesson) return '';
-
-  return `
-    <div class="fixed inset-0 z-[100] flex items-center justify-center p-4 lg:p-8 fade-in">
-        <div class="absolute inset-0 modal-overlay" onclick="closeEditor()"></div>
-        <div class="bg-white w-full max-w-6xl h-full max-h-[95vh] rounded-[2.5rem] shadow-2xl z-10 flex flex-col overflow-hidden">
-            <!-- Header -->
-            <header class="px-8 py-6 border-b bg-slate-50 flex justify-between items-center">
-                <div>
-                    <h2 class="text-2xl font-black text-slate-900 flex items-center gap-3">
-                        <i data-lucide="edit-3" class="w-6 h-6 text-indigo-600"></i> Édition
-                    </h2>
-                    <p class="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Leçon ID: ${lesson.id}</p>
-                </div>
-                <button onclick="closeEditor()" class="p-3 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-full transition-colors">
-                    <i data-lucide="x" class="w-8 h-8"></i>
-                </button>
-            </header>
-            
-            <!-- Body -->
-            <div class="flex-1 overflow-y-auto p-8 lg:p-10 grid grid-cols-12 gap-10 bg-white">
-                <!-- Main Content -->
-                <div class="col-span-12 lg:col-span-7 space-y-8">
-                    <div class="group">
-                        <label class="block text-xs font-black uppercase text-slate-400 mb-2 tracking-widest">Titre de la leçon</label>
-                        <input type="text" 
-                               value="${lesson.title}" 
-                               oninput="updateLessonTitle(${lesson.id}, this.value)" 
-                               class="w-full text-2xl font-bold bg-slate-50 border-2 border-slate-100 p-4 rounded-xl focus:border-indigo-500 focus:bg-white outline-none transition-all placeholder:text-slate-300"
-                               placeholder="Titre de la leçon..." />
-                    </div>
-                    <div class="group h-full flex flex-col">
-                        <label class="block text-xs font-black uppercase text-slate-400 mb-2 tracking-widest">Contenu Pédagogique</label>
-                        <textarea oninput="updateLessonContent(${lesson.id}, this.value)" 
-                                  class="w-full flex-1 min-h-[300px] text-lg bg-slate-50 border-2 border-slate-100 p-6 rounded-xl focus:border-indigo-500 focus:bg-white outline-none transition-all placeholder:text-slate-300 resize-none leading-relaxed"
-                                  placeholder="Rédigez le cours ici...">${lesson.content || ''}</textarea>
-                    </div>
-                </div>
-
-                <!-- Settings Sidebar -->
-                <div class="col-span-12 lg:col-span-5 space-y-6">
-                    <!-- Status Card -->
-                    <div class="p-6 rounded-2xl border-4 ${lesson.status === 'locked' ? 'border-slate-100 bg-slate-50' : 'border-emerald-100 bg-emerald-50/50'} transition-colors">
-                        <div class="flex items-center justify-between mb-3">
-                            <div class="flex items-center gap-3">
-                                <div class="p-3 rounded-xl ${lesson.status === 'locked' ? 'bg-slate-200 text-slate-500' : 'bg-emerald-200 text-emerald-700'}">
-                                    <i data-lucide="${lesson.status === 'locked' ? 'lock' : 'unlock'}" class="w-6 h-6"></i>
-                                </div>
-                                <div>
-                                    <h3 class="font-black text-slate-900">Accès Élève</h3>
-                                    <p class="text-xs font-bold ${lesson.status === 'locked' ? 'text-slate-400' : 'text-emerald-600'} uppercase">
-                                        ${lesson.status === 'locked' ? 'Verrouillé' : 'Ouvert'}
-                                    </p>
-                                </div>
-                            </div>
-                            <label class="switch">
-                                <input type="checkbox" ${lesson.status !== 'locked' ? 'checked' : ''} onchange="toggleLessonLock(${lesson.id}, !this.checked)">
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                    <!-- Validation Config -->
-                    <div class="bg-orange-50/50 p-6 rounded-2xl border-4 border-orange-100/50">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-3">
-                                <div class="p-3 rounded-xl bg-orange-100 text-orange-600">
-                                    <span class="text-2xl leading-none filter drop-shadow-sm">🎯</span>
-                                </div>
-                                <div>
-                                    <h3 class="font-black text-slate-900">Validation Requise</h3>
-                                    <p class="text-xs font-bold text-orange-500 uppercase">Devoir à rendre</p>
-                                </div>
-                            </div>
-                            <label class="switch">
-                                <input type="checkbox" ${lesson.validationRequired ? 'checked' : ''} onchange="toggleLessonValidation(${lesson.id}, this.checked)">
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                    <!-- Video Config -->
-                    <div class="bg-indigo-600 p-6 rounded-2xl text-white shadow-xl shadow-indigo-200">
-                        <div class="flex items-center gap-2 mb-4 opacity-80">
-                            <i data-lucide="video" class="w-4 h-4"></i>
-                            <span class="text-xs font-black uppercase tracking-widest">Intégration Vidéo</span>
-                        </div>
-                        <div class="bg-indigo-800/50 p-4 rounded-xl border border-indigo-400/30">
-                            <label class="block text-[10px] uppercase font-bold text-indigo-200 mb-1">ID Wistia</label>
-                            <input type="text" 
-                                   value="${lesson.wistiaId || ''}" 
-                                   oninput="updateLessonWistia(${lesson.id}, this.value)"
-                                   class="w-full bg-transparent border-none text-white font-mono text-lg focus:outline-none placeholder:text-indigo-400" 
-                                   placeholder="ex: 30q789" />
-                        </div>
-                    </div>
-                    <!-- Files -->
-                    <div class="border-t border-slate-100 pt-6">
-                        <div class="flex items-center justify-between mb-4">
-                            <span class="text-xs font-black uppercase text-slate-400 tracking-widest">Fichiers joints</span>
-                            <button onclick="addFile(${lesson.id})" class="text-xs font-bold bg-slate-900 text-white px-3 py-1.5 rounded-lg hover:bg-slate-700 transition-colors">+ Ajouter</button>
-                        </div>
-                        <div class="space-y-2">
-                            ${lesson.files.map(f => `
-                                <div class="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
-                                    <div class="flex items-center gap-3 overflow-hidden">
-                                        <div class="w-8 h-8 bg-orange-100 text-orange-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                                            <i data-lucide="file" class="w-4 h-4"></i>
-                                        </div>
-                                        <span class="text-sm font-bold text-slate-700 truncate">${f.name}</span>
-                                    </div>
-                                    <button onclick="removeFile(${lesson.id}, '${f.name}')" class="text-slate-300 hover:text-red-500 p-1">
-                                        <i data-lucide="trash" class="w-4 h-4"></i>
-                                    </button>
-                                </div>
-                            `).join('')}
-                            ${lesson.files.length === 0 ? `<p class="text-xs text-slate-300 italic text-center py-2">Aucun fichier</p>` : ''}
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <!-- Footer -->
-            <footer class="p-6 border-t bg-slate-50 flex justify-end">
-                <button onclick="closeEditor()" class="bg-slate-900 text-white px-10 py-4 rounded-xl font-black text-lg shadow-xl hover:translate-y-[-2px] transition-all">
-                    Enregistrer & Fermer
-                </button>
-            </footer>
-        </div>
-    </div>
-  `;
-}
-
-function renderAdmin() {
-  return `
-    <div class="h-full bg-admin-grid p-8 lg:p-12 overflow-y-auto pb-40 fade-in">
-        <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-16 max-w-5xl mx-auto gap-6">
-            <div>
-                <h1 class="text-4xl lg:text-5xl font-black text-slate-900 mb-2">Contenu du Cours</h1>
-                <p class="text-lg text-slate-500 font-bold uppercase tracking-widest">Modifiez la structure</p>
-            </div>
-            <button onclick="addChapter()" class="bg-indigo-600 text-white px-6 py-3 lg:px-8 lg:py-4 rounded-2xl font-black flex items-center gap-3 shadow-lg shadow-indigo-200 hover:scale-105 transition-all">
-                <i data-lucide="plus-circle" class="w-5 h-5"></i> Nouveau Chapitre
-            </button>
-        </header>
-
-        <div class="space-y-12 max-w-5xl mx-auto">
-            ${state.modules.map(mod => `
-                <div class="bg-white p-8 lg:p-10 rounded-[2.5rem] border border-slate-200 shadow-premium group/module">
-                    <div class="flex items-center justify-between mb-8 pb-6 border-b border-slate-100">
-                        <div class="flex-1 mr-4">
-                             <input type="text" 
-                                    value="${mod.title}" 
-                                    oninput="updateChapterTitle(${mod.id}, this.value)"
-                                    class="w-full text-2xl lg:text-3xl font-black text-slate-900 bg-transparent outline-none focus:text-indigo-600 transition-colors placeholder:text-slate-200"
-                                    placeholder="Titre du chapitre..." />
-                        </div>
-                        <button onclick="deleteChapter(${mod.id})" class="text-slate-200 hover:text-red-500 hover:bg-red-50 p-3 rounded-xl transition-all">
-                            <i data-lucide="trash-2" class="w-6 h-6"></i>
-                        </button>
-                    </div>
-                    
-                    <div class="space-y-4 pl-0 lg:pl-8 border-l-0 lg:border-l-2 border-slate-100">
-                        ${mod.lessons.map(l => `
-                            <div class="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-transparent hover:border-indigo-200 hover:bg-indigo-50/30 transition-all group/lesson">
-                                <div class="flex items-center gap-5 overflow-hidden">
-                                    <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${l.status === 'locked' ? 'bg-slate-200 text-slate-400' : 'bg-emerald-100 text-emerald-600'}">
-                                        <i data-lucide="${l.status === 'locked' ? 'lock' : 'check-circle'}" class="w-5 h-5"></i>
-                                    </div>
-                                    <div class="min-w-0 flex-1">
-                                        <div class="flex items-center gap-2">
-                                            <p class="text-lg font-bold text-slate-800 truncate">${l.title}</p>
-                                            ${l.validationRequired ? '<span title="Validation requise" class="text-lg filter drop-shadow-sm">🎯</span>' : ''}
-                                        </div>
-                                        <div class="flex items-center gap-2 mt-1">
-                                            <span class="text-[10px] font-black bg-white border border-slate-200 px-2 py-0.5 rounded text-slate-400 uppercase tracking-wider">${l.type}</span>
-                                            <span class="text-[10px] font-bold text-slate-400">${l.duration}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <button onclick="openEditor(${l.id})" class="bg-white border-2 border-slate-200 px-5 py-2 rounded-xl font-black text-xs text-slate-600 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all shadow-sm whitespace-nowrap">
-                                    ÉDITER
-                                </button>
-                            </div>
-                        `).join('')}
-                        
-                        <button onclick="addLesson(${mod.id})" class="w-full py-5 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50/10 transition-all flex items-center justify-center gap-2 text-sm mt-4">
-                            <i data-lucide="plus" class="w-4 h-4"></i> Ajouter une leçon
-                        </button>
-                    </div>
-                </div>
-            `).join('')}
-        </div>
-        
-        ${state.editingLessonId ? renderLessonEditor() : ''}
-    </div>
-  `;
-}
-
+// 5. PROFILE
 function renderProfile() {
     const user = getCurrentUser();
     return `
-    <div class="h-full flex items-center justify-center p-8 bg-slate-50">
-        <div class="bg-white p-12 rounded-[2.5rem] shadow-2xl max-w-lg w-full text-center">
-            <img src="${user.avatar}" class="w-32 h-32 rounded-3xl mx-auto mb-6 shadow-lg" />
+    <div class="h-full flex items-center justify-center p-8 bg-slate-50 fade-in">
+        <div class="bg-white p-12 rounded-[2.5rem] shadow-2xl max-w-lg w-full text-center border border-slate-100">
+            <img src="${user.avatar}" class="w-32 h-32 rounded-3xl mx-auto mb-6 shadow-lg border-4 border-white" />
             <h2 class="text-3xl font-black text-slate-900 mb-1">${user.name}</h2>
             <p class="text-slate-400 font-bold mb-8">${user.email}</p>
             
@@ -757,13 +626,149 @@ function renderProfile() {
     </div>`;
 }
 
-// --- RENDER ENGINE ---
+// 6. ÉDITEUR (ADMIN)
+function renderLessonEditor() {
+  const lesson = findLesson(state.editingLessonId);
+  if (!lesson) return '';
+
+  return `
+    <div class="fixed inset-0 z-[100] flex items-center justify-center p-4 lg:p-8 fade-in">
+        <div class="absolute inset-0 modal-overlay" onclick="closeEditor()"></div>
+        <div class="bg-white w-full max-w-6xl h-full max-h-[95vh] rounded-[2.5rem] shadow-2xl z-10 flex flex-col overflow-hidden">
+            <header class="px-8 py-6 border-b bg-slate-50 flex justify-between items-center">
+                <div>
+                    <h2 class="text-2xl font-black text-slate-900 flex items-center gap-3">
+                        <i data-lucide="edit-3" class="w-6 h-6 text-indigo-600"></i> Édition
+                    </h2>
+                    <p class="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Leçon ID: ${lesson.id}</p>
+                </div>
+                <button onclick="closeEditor()" class="p-3 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-full transition-colors"><i data-lucide="x" class="w-8 h-8"></i></button>
+            </header>
+            
+            <div class="flex-1 overflow-y-auto p-8 lg:p-10 grid grid-cols-12 gap-10 bg-white">
+                <div class="col-span-12 lg:col-span-7 space-y-8">
+                    <div class="group">
+                        <label class="block text-xs font-black uppercase text-slate-400 mb-2 tracking-widest">Titre de la leçon</label>
+                        <input type="text" value="${lesson.title}" oninput="updateLessonTitle(${lesson.id}, this.value)" class="w-full text-2xl font-bold bg-slate-50 border-2 border-slate-100 p-4 rounded-xl focus:border-indigo-500 outline-none transition-all" />
+                    </div>
+                    <div class="group h-full flex flex-col">
+                        <label class="block text-xs font-black uppercase text-slate-400 mb-2 tracking-widest">Contenu Pédagogique</label>
+                        <textarea oninput="updateLessonContent(${lesson.id}, this.value)" class="w-full flex-1 min-h-[300px] text-lg bg-slate-50 border-2 border-slate-100 p-6 rounded-xl focus:border-indigo-500 outline-none resize-none leading-relaxed">${lesson.content || ''}</textarea>
+                    </div>
+                </div>
+
+                <div class="col-span-12 lg:col-span-5 space-y-6">
+                    <div class="p-6 rounded-2xl border-4 ${lesson.status === 'locked' ? 'border-slate-100 bg-slate-50' : 'border-emerald-100 bg-emerald-50/50'} transition-colors">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-3">
+                                <div class="p-3 rounded-xl ${lesson.status === 'locked' ? 'bg-slate-200 text-slate-500' : 'bg-emerald-200 text-emerald-700'}"><i data-lucide="${lesson.status === 'locked' ? 'lock' : 'unlock'}" class="w-6 h-6"></i></div>
+                                <div><h3 class="font-black text-slate-900">Accès Élève</h3><p class="text-xs font-bold ${lesson.status === 'locked' ? 'text-slate-400' : 'text-emerald-600'} uppercase">${lesson.status === 'locked' ? 'Verrouillé' : 'Ouvert'}</p></div>
+                            </div>
+                            <label class="switch"><input type="checkbox" ${lesson.status !== 'locked' ? 'checked' : ''} onchange="toggleLessonLock(${lesson.id}, !this.checked)"><span class="slider"></span></label>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-orange-50/50 p-6 rounded-2xl border-4 border-orange-100/50">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="p-3 rounded-xl bg-orange-100 text-orange-600"><span class="text-2xl leading-none filter drop-shadow-sm">🎯</span></div>
+                                <div><h3 class="font-black text-slate-900">Validation Requise</h3><p class="text-xs font-bold text-orange-500 uppercase">Devoir à rendre</p></div>
+                            </div>
+                            <label class="switch"><input type="checkbox" ${lesson.validationRequired ? 'checked' : ''} onchange="toggleLessonValidation(${lesson.id}, this.checked)"><span class="slider"></span></label>
+                        </div>
+                    </div>
+
+                    <div class="bg-indigo-600 p-6 rounded-2xl text-white shadow-xl shadow-indigo-200">
+                        <div class="flex items-center gap-2 mb-4 opacity-80"><i data-lucide="video" class="w-4 h-4"></i><span class="text-xs font-black uppercase tracking-widest">Intégration Vidéo</span></div>
+                        <div class="bg-indigo-800/50 p-4 rounded-xl border border-indigo-400/30">
+                            <label class="block text-[10px] uppercase font-bold text-indigo-200 mb-1">ID Wistia</label>
+                            <input type="text" value="${lesson.wistiaId || ''}" oninput="updateLessonWistia(${lesson.id}, this.value)" class="w-full bg-transparent border-none text-white font-mono text-lg focus:outline-none placeholder:text-indigo-400" placeholder="ex: 30q789" />
+                        </div>
+                    </div>
+
+                    <div class="border-t border-slate-100 pt-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <span class="text-xs font-black uppercase text-slate-400 tracking-widest">Fichiers joints</span>
+                            <button onclick="addFile(${lesson.id})" class="text-xs font-bold bg-slate-900 text-white px-3 py-1.5 rounded-lg hover:bg-slate-700 transition-colors">+ Ajouter</button>
+                        </div>
+                        <div class="space-y-2">
+                            ${lesson.files.map(f => `
+                                <div class="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
+                                    <div class="flex items-center gap-3 overflow-hidden">
+                                        <div class="w-8 h-8 bg-orange-100 text-orange-600 rounded-lg flex items-center justify-center flex-shrink-0"><i data-lucide="file" class="w-4 h-4"></i></div>
+                                        <span class="text-sm font-bold text-slate-700 truncate">${f.name}</span>
+                                    </div>
+                                    <button onclick="removeFile(${lesson.id}, '${f.name}')" class="text-slate-300 hover:text-red-500 p-1"><i data-lucide="trash" class="w-4 h-4"></i></button>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <footer class="p-6 border-t bg-slate-50 flex justify-end">
+                <button onclick="closeEditor()" class="bg-slate-900 text-white px-10 py-4 rounded-xl font-black text-lg shadow-xl hover:translate-y-[-2px] transition-all">Enregistrer & Fermer</button>
+            </footer>
+        </div>
+    </div>
+  `;
+}
+
+// 7. DASHBOARD ADMIN (Gestion Contenu)
+function renderAdmin() {
+  return `
+    <div class="h-full bg-admin-grid p-8 lg:p-12 overflow-y-auto pb-40 fade-in">
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-16 max-w-5xl mx-auto gap-6">
+            <div>
+                <h1 class="text-4xl lg:text-5xl font-black text-slate-900 mb-2">Contenu du Cours</h1>
+                <p class="text-lg text-slate-500 font-bold uppercase tracking-widest">Modifiez la structure</p>
+            </div>
+            <button onclick="addChapter()" class="bg-indigo-600 text-white px-6 py-3 lg:px-8 lg:py-4 rounded-2xl font-black flex items-center gap-3 shadow-lg shadow-indigo-200 hover:scale-105 transition-all">
+                <i data-lucide="plus-circle" class="w-5 h-5"></i> Nouveau Chapitre
+            </button>
+        </header>
+
+        <div class="space-y-12 max-w-5xl mx-auto">
+            ${state.modules.map(mod => `
+                <div class="bg-white p-8 lg:p-10 rounded-[2.5rem] border border-slate-200 shadow-premium group/module">
+                    <div class="flex items-center justify-between mb-8 pb-6 border-b border-slate-100">
+                        <div class="flex-1 mr-4">
+                             <input type="text" value="${mod.title}" oninput="updateChapterTitle(${mod.id}, this.value)" class="w-full text-2xl lg:text-3xl font-black text-slate-900 bg-transparent outline-none focus:text-indigo-600 transition-colors placeholder:text-slate-200" placeholder="Titre du chapitre..." />
+                        </div>
+                        <button onclick="deleteChapter(${mod.id})" class="text-slate-200 hover:text-red-500 hover:bg-red-50 p-3 rounded-xl transition-all"><i data-lucide="trash-2" class="w-6 h-6"></i></button>
+                    </div>
+                    
+                    <div class="space-y-4 pl-0 lg:pl-8 border-l-0 lg:border-l-2 border-slate-100">
+                        ${mod.lessons.map(l => `
+                            <div class="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-transparent hover:border-indigo-200 hover:bg-indigo-50/30 transition-all group/lesson">
+                                <div class="flex items-center gap-5 overflow-hidden">
+                                    <div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${l.status === 'locked' ? 'bg-slate-200 text-slate-400' : 'bg-emerald-100 text-emerald-600'}"><i data-lucide="${l.status === 'locked' ? 'lock' : 'check-circle'}" class="w-5 h-5"></i></div>
+                                    <div class="min-w-0 flex-1">
+                                        <div class="flex items-center gap-2"><p class="text-lg font-bold text-slate-800 truncate">${l.title}</p>${l.validationRequired ? '<span title="Validation requise" class="text-lg filter drop-shadow-sm">🎯</span>' : ''}</div>
+                                        <div class="flex items-center gap-2 mt-1"><span class="text-[10px] font-black bg-white border border-slate-200 px-2 py-0.5 rounded text-slate-400 uppercase tracking-wider">${l.type}</span><span class="text-[10px] font-bold text-slate-400">${l.duration}</span></div>
+                                    </div>
+                                </div>
+                                <button onclick="openEditor(${l.id})" class="bg-white border-2 border-slate-200 px-5 py-2 rounded-xl font-black text-xs text-slate-600 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all shadow-sm whitespace-nowrap">ÉDITER</button>
+                            </div>
+                        `).join('')}
+                        <button onclick="addLesson(${mod.id})" class="w-full py-5 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50/10 transition-all flex items-center justify-center gap-2 text-sm mt-4"><i data-lucide="plus" class="w-4 h-4"></i> Ajouter une leçon</button>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+        ${state.editingLessonId ? renderLessonEditor() : ''}
+    </div>
+  `;
+}
+
+
+// --- RENDER ENGINE PRINCIPAL ---
 
 function render() {
   const root = document.getElementById('root');
   if(!root) return;
 
-  // 1. Guard: Si pas connecté, afficher Login
+  // 1. SI NON CONNECTÉ -> ÉCRAN LOGIN
   if(!state.currentUser) {
       root.innerHTML = renderLogin();
       if (window.lucide) window.lucide.createIcons();
@@ -773,21 +778,24 @@ function render() {
   const currentUser = getCurrentUser();
   const isAdmin = currentUser.role === 'admin';
 
-  // 2. Router
+  // 2. ROUTEUR
   let content = '';
   switch(state.currentView) {
     case 'dashboard': content = renderDashboard(); break;
     case 'classroom': content = renderClassroom(); break;
-    case 'admin': content = isAdmin ? renderAdmin() : renderDashboard(); break; // Protect Admin
-    case 'admin-students': content = isAdmin ? renderStudentManagement() : renderDashboard(); break; // New View
+    
+    // Vues protégées (Admin Only)
+    case 'admin': content = isAdmin ? renderAdmin() : renderDashboard(); break;
+    case 'admin-students': content = isAdmin ? renderStudentManagement() : renderDashboard(); break;
+    
     case 'profile': content = renderProfile(); break;
     default: content = renderDashboard();
   }
 
-  // 3. Layout Principal
+  // 3. LAYOUT PRINCIPAL
   root.innerHTML = `
     <div class="flex h-screen bg-slate-50">
-        <!-- Main Nav -->
+        <!-- Sidebar Navigation (Desktop) -->
         <nav class="w-24 bg-white border-r border-slate-200 flex flex-col items-center py-10 z-[50] hidden md:flex">
             <div class="mb-16 w-14 h-14 bg-slate-900 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-slate-300">
                 <i data-lucide="music-4" class="w-7 h-7 text-orange-400"></i>
@@ -799,20 +807,22 @@ function render() {
                 ${navButton('profile', 'user', 'Compte')}
             </div>
 
-            <!-- Admin Nav Section -->
+            <!-- SECTION ADMIN -->
             ${isAdmin ? `
                 <div class="w-full px-4 mb-4 pt-4 border-t border-slate-100 flex flex-col gap-4">
-                     <button onclick="setView('admin-students')" class="p-3 rounded-xl transition-all ${state.currentView === 'admin-students' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-600'}" title="Mes élèves">
+                     <button onclick="setView('admin-students')" class="p-3 rounded-xl transition-all group relative ${state.currentView === 'admin-students' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-600'}" title="Mes Apprentis">
                         <i data-lucide="users" class="w-6 h-6"></i>
+                        ${state.currentView !== 'admin-students' ? '<span class="absolute left-14 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Élèves</span>' : ''}
                     </button>
-                    <button onclick="setView('admin')" class="p-3 rounded-xl transition-all ${state.currentView === 'admin' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-600'}" title="Éditeur">
+                    <button onclick="setView('admin')" class="p-3 rounded-xl transition-all group relative ${state.currentView === 'admin' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-600'}" title="Éditeur de contenu">
                         <i data-lucide="edit" class="w-6 h-6"></i>
+                        ${state.currentView !== 'admin' ? '<span class="absolute left-14 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Contenu</span>' : ''}
                     </button>
                 </div>
             ` : ''}
         </nav>
 
-        <!-- Mobile Nav -->
+        <!-- Navigation (Mobile) -->
         <nav class="md:hidden fixed bottom-0 w-full bg-white border-t p-4 flex justify-around z-50">
              ${navButtonMobile('dashboard', 'layout-grid')}
              ${navButtonMobile('classroom', 'graduation-cap')}
@@ -820,17 +830,17 @@ function render() {
              ${navButtonMobile('profile', 'user')}
         </nav>
 
+        <!-- Main Content Area -->
         <main class="flex-1 overflow-hidden relative selection:bg-orange-100 selection:text-orange-900">
             ${content}
         </main>
     </div>
   `;
 
-  // Ré-hydratation des icônes
   if (window.lucide) window.lucide.createIcons();
 }
 
-// Helpers Render
+// Composants Navigation
 const navButton = (view, icon, label) => `
     <button onclick="setView('${view}')" class="group flex flex-col items-center gap-1.5 w-full relative">
         <div class="p-3 rounded-xl transition-all ${state.currentView === view ? 'bg-orange-50 text-orange-600' : 'text-slate-400 group-hover:text-slate-600'}">
@@ -847,5 +857,5 @@ const navButtonMobile = (view, icon) => `
     </button>
 `;
 
-// Init
+// Lancement
 render();
