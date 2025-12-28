@@ -1,15 +1,14 @@
 
 /**
- * GIA V4.1 - LMS EDITION
- * Feature: Multi-User Auth, Role Management, Student Tracking, Private Platform
+ * GIA V4.2 - PROGRESSION ENGINE
+ * Feature: Per-User Unlocking Logic, Admin Validation Checkpoints
  */
 
 // --- CONFIGURATION PAR DÉFAUT ---
 
 const DEFAULT_DB = {
-  version: 4.1, // Version bump pour forcer la migration
-  currentUser: null, // null = personne n'est connecté
-  // Base de données initiale des utilisateurs
+  version: 4.2, 
+  currentUser: null, 
   users: [
     {
       id: 1,
@@ -18,7 +17,8 @@ const DEFAULT_DB = {
       password: "admin", 
       role: 'admin',
       avatar: "https://i.pravatar.cc/150?u=admin",
-      progression: 100
+      progression: 100,
+      validatedLessons: [] // Admin a accès à tout par défaut
     },
     {
       id: 2,
@@ -27,8 +27,9 @@ const DEFAULT_DB = {
       password: "123",
       role: 'student',
       avatar: "https://i.pravatar.cc/150?u=jp",
-      progression: 15,
-      points: 450
+      progression: 0,
+      points: 0,
+      validatedLessons: [] // Liste des IDs de leçons validées par le prof
     }
   ],
   modules: [
@@ -42,12 +43,12 @@ const DEFAULT_DB = {
           subtitle: "Les bases du confort", 
           duration: "10m", 
           type: 'video', 
-          status: 'active', 
+          status: 'active', // 'status' sert maintenant uniquement à dire si le contenu est "publié" ou "brouillon"
           hasVideo: true, 
           wistiaId: '30q789',
-          validationRequired: false,
-          content: "Dans cette leçon, nous allons aborder la posture idéale pour éviter les douleurs lombaires...",
-          files: [{ name: "Guide_Posture.pdf", url: "#" }]
+          validationRequired: false, // Pas de blocage ici
+          content: "Dans cette leçon, nous allons aborder la posture idéale...",
+          files: []
         },
         { 
             id: 102, 
@@ -55,18 +56,31 @@ const DEFAULT_DB = {
             subtitle: "Validation des acquis", 
             duration: "5m", 
             type: 'practice', 
-            status: 'locked', 
+            status: 'active', 
             hasVideo: false, 
             wistiaId: '',
-            validationRequired: true,
+            validationRequired: true, // BLOQUANT : Il faut que le prof valide pour voir la suite
             content: "Envoyez une vidéo de votre premier accord.",
+            files: []
+        },
+        { 
+            id: 103, 
+            title: "La Rythmique Feu de Camp", 
+            subtitle: "Jouer en rythme", 
+            duration: "15m", 
+            type: 'video', 
+            status: 'active', 
+            hasVideo: true, 
+            wistiaId: '',
+            validationRequired: false,
+            content: "Bravo pour votre validation ! Voici la suite...",
             files: []
         }
       ]
     }
   ],
   activeLessonId: 101,
-  currentView: 'login', // On commence toujours par le login
+  currentView: 'login',
   expandedModules: [1],
   isNotesOpen: false,
   editingLessonId: null,
@@ -74,30 +88,27 @@ const DEFAULT_DB = {
 
 // --- CORE ENGINE & MIGRATION ---
 
-// 1. Récupération de l'état existant
 let savedState = null;
-try {
-    savedState = JSON.parse(localStorage.getItem('gia_state'));
-} catch (e) {
-    console.error("Erreur lecture sauvegarde", e);
-}
+try { savedState = JSON.parse(localStorage.getItem('gia_state')); } catch (e) {}
 
-// 2. Logique de Migration (Aggressive pour V4.1)
 let state;
 
-// Si pas de sauvegarde OU version obsolète (inférieure à 4.1)
-if (!savedState || !savedState.version || savedState.version < 4.1) {
-    console.log("--- MIGRATION MAJEURE V4.1 ---");
-    // On conserve les leçons existantes si elles existent, sinon on prend celles par défaut
-    const existingModules = (savedState && savedState.modules) ? savedState.modules : DEFAULT_DB.modules;
+// Migration V4.2
+if (!savedState || !savedState.version || savedState.version < 4.2) {
+    console.log("--- MIGRATION V4.2 (Progression) ---");
+    const baseState = savedState || DEFAULT_DB;
     
-    // On réinitialise TOUT le reste (Users, Auth, Views) pour garantir que le système Admin fonctionne
+    // On s'assure que tous les users ont un tableau validatedLessons
+    const updatedUsers = (baseState.users || DEFAULT_DB.users).map(u => ({
+        ...u,
+        validatedLessons: u.validatedLessons || []
+    }));
+
     state = {
-        ...DEFAULT_DB,
-        modules: existingModules
+        ...DEFAULT_DB, // On prend la structure neuve pour les modules (pour la démo)
+        users: updatedUsers,
+        modules: DEFAULT_DB.modules // On écrase les modules pour la démo pour avoir la leçon 103
     };
-    
-    // On force la sauvegarde immédiate
     localStorage.setItem('gia_state', JSON.stringify(state));
 } else {
     state = savedState;
@@ -107,25 +118,73 @@ const saveState = () => {
   localStorage.setItem('gia_state', JSON.stringify(state));
 };
 
-// Helper : Qui est connecté ?
 const getCurrentUser = () => {
     if(!state.currentUser) return null;
     return state.users.find(u => u.id === state.currentUser);
 };
 
-// --- AUTHENTIFICATION & UTILISATEURS ---
+
+// --- ENGINE DE PROGRESSION (LE COEUR DU SYSTEME) ---
+
+/**
+ * Calcule quelles leçons sont accessibles pour un utilisateur donné.
+ * Retourne un Set d'IDs accessibles.
+ */
+const getAccessibleLessons = (user) => {
+    const accessibleIds = new Set();
+    
+    // Si Admin, tout est ouvert
+    if (user.role === 'admin') {
+        state.modules.forEach(m => m.lessons.forEach(l => accessibleIds.add(l.id)));
+        return accessibleIds;
+    }
+
+    // Algorithme linéaire pour les élèves
+    let isBlocked = false;
+
+    for (const mod of state.modules) {
+        for (const lesson of mod.lessons) {
+            
+            // Si le prof a marqué la leçon comme "Brouillon" (locked globalement), personne ne la voit
+            if (lesson.status === 'locked') {
+                // On n'ajoute pas l'ID, et on ne bloque pas forcément la suite, on la saute juste (ou on bloque, au choix. Ici on saute).
+                continue; 
+            }
+
+            if (!isBlocked) {
+                // La leçon est accessible
+                accessibleIds.add(lesson.id);
+
+                // EST-CE UN POINT DE BLOCAGE ?
+                if (lesson.validationRequired) {
+                    // Est-ce que l'utilisateur a validé cette leçon ?
+                    const hasValidated = user.validatedLessons && user.validatedLessons.includes(lesson.id);
+                    
+                    if (!hasValidated) {
+                        // NON : On s'arrête ICI.
+                        // L'utilisateur peut voir CETTE leçon (pour faire le devoir),
+                        // mais la boucle s'arrêtera pour les suivantes.
+                        isBlocked = true;
+                    }
+                }
+            }
+        }
+    }
+    
+    return accessibleIds;
+};
+
+// --- AUTH & USER MANAGEMENT ---
 
 window.login = (email, password) => {
-    // Recherche de l'utilisateur
     const user = state.users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
-    
     if (user) {
         state.currentUser = user.id;
         state.currentView = 'dashboard';
         saveState();
-        render(); // Rechargement complet
+        render();
     } else {
-        alert("Identifiants incorrects.\n\nRappel Démo :\nFormateur : admin@gia.com / admin\nÉlève : eleve@gia.com / 123");
+        alert("Identifiants incorrects.");
     }
 };
 
@@ -136,146 +195,98 @@ window.logout = () => {
     render();
 };
 
-// Création d'élève (ADMIN SEULEMENT)
 window.createStudent = (name, email, password) => {
     if(!name || !email || !password) return alert("Veuillez remplir tous les champs.");
-    
-    // Vérification doublon email
-    if(state.users.find(u => u.email.toLowerCase() === email.toLowerCase())) {
-        return alert("Cet email est déjà utilisé par un autre élève.");
-    }
+    if(state.users.find(u => u.email.toLowerCase() === email.toLowerCase())) return alert("Email pris.");
 
     const newStudent = {
         id: Date.now(),
-        name: name,
-        email: email,
-        password: password, // En prod, on ne stocke jamais les mdp en clair, mais ok pour démo locale
+        name, email, password,
         role: 'student',
         avatar: `https://i.pravatar.cc/150?u=${Date.now()}`,
         progression: 0,
-        points: 0
+        points: 0,
+        validatedLessons: []
     };
-
     state.users.push(newStudent);
     saveState();
-    
-    // Fermeture modal et rafraichissement
     document.getElementById('add-student-modal').classList.add('hidden');
     render(); 
-    alert(`Compte créé pour ${name} !\nIl peut se connecter avec :\nEmail: ${email}\nMdp: ${password}`);
 };
 
 window.deleteUser = (id) => {
-    if(confirm("Êtes-vous sûr de vouloir supprimer cet élève ? Cette action est irréversible.")) {
+    if(confirm("Supprimer cet élève ?")) {
         state.users = state.users.filter(u => u.id !== id);
         saveState();
         render();
     }
 };
 
+// --- ACTION DE VALIDATION FORMATEUR ---
+
+window.toggleStudentValidation = (studentId, lessonId, isValidated) => {
+    const student = state.users.find(u => u.id === studentId);
+    if (!student) return;
+
+    if (!student.validatedLessons) student.validatedLessons = [];
+
+    if (isValidated) {
+        // Ajouter la validation
+        if (!student.validatedLessons.includes(lessonId)) {
+            student.validatedLessons.push(lessonId);
+            // Ajout de points XP pour le fun
+            student.points = (student.points || 0) + 50; 
+            // Recalcul progression (simpliste pour l'instant)
+            student.progression = Math.min(100, student.progression + 5); 
+        }
+    } else {
+        // Retirer la validation
+        student.validatedLessons = student.validatedLessons.filter(id => id !== lessonId);
+        student.points = Math.max(0, (student.points || 0) - 50);
+    }
+    
+    saveState();
+    render(); // Rafraichir l'admin panel instantanément
+};
 
 // --- ACTIONS GLOBALES ---
 
-window.setView = (view) => {
-  state.currentView = view;
-  state.editingLessonId = null;
-  state.isNotesOpen = false;
-  saveState();
-  render();
-};
-
-window.setActiveLesson = (id) => {
-  state.activeLessonId = id;
-  state.currentView = 'classroom';
-  saveState();
-  render();
-};
-
-window.toggleNotes = () => {
-  state.isNotesOpen = !state.isNotesOpen;
-  saveState();
-  render();
-};
-
+window.setView = (view) => { state.currentView = view; state.editingLessonId = null; state.isNotesOpen = false; saveState(); render(); };
+window.setActiveLesson = (id) => { state.activeLessonId = id; state.currentView = 'classroom'; saveState(); render(); };
+window.toggleNotes = () => { state.isNotesOpen = !state.isNotesOpen; saveState(); render(); };
 window.toggleModule = (id) => {
   if(state.expandedModules.includes(id)) state.expandedModules = state.expandedModules.filter(m => m !== id);
   else state.expandedModules.push(id);
-  saveState();
-  render();
+  saveState(); render();
 };
 
-// --- ACTIONS ÉDITION CONTENU (ADMIN) ---
-
+// --- ADMIN EDITOR ACTIONS ---
 window.updateLessonTitle = (id, value) => { const l = findLesson(id); if(l) { l.title = value; saveState(); } };
 window.updateLessonContent = (id, value) => { const l = findLesson(id); if(l) { l.content = value; saveState(); } };
 window.updateLessonWistia = (id, value) => { const l = findLesson(id); if(l) { l.wistiaId = value; saveState(); } };
 window.updateChapterTitle = (id, value) => { const m = state.modules.find(m => m.id === id); if(m) { m.title = value; saveState(); } };
-window.toggleLessonLock = (id, isChecked) => { const l = findLesson(id); if(l) { l.status = isChecked ? 'locked' : 'active'; saveState(); render(); } };
+window.toggleLessonLock = (id, isChecked) => { const l = findLesson(id); if(l) { l.status = isChecked ? 'locked' : 'active'; saveState(); render(); } }; // Bloquage global (Brouillon)
 window.toggleLessonValidation = (id, isChecked) => { const l = findLesson(id); if(l) { l.validationRequired = isChecked; saveState(); render(); } };
 
-window.addChapter = () => {
-  const newId = Date.now();
-  state.modules.push({ id: newId, title: "Nouveau Chapitre", lessons: [] });
-  saveState();
-  render();
-};
-
-window.deleteChapter = (id) => {
-  if(confirm("Supprimer ce chapitre ?")) {
-    state.modules = state.modules.filter(m => m.id !== id);
-    saveState();
-    render();
-  }
-};
-
-window.addLesson = (chapterId) => {
-  const mod = state.modules.find(m => m.id === chapterId);
-  if(mod) {
-    mod.lessons.push({
-      id: Date.now(),
-      title: "Nouvelle leçon",
-      subtitle: "À configurer",
-      duration: "5m",
-      type: 'video',
-      status: 'locked',
-      hasVideo: true,
-      wistiaId: '',
-      validationRequired: false,
-      content: '',
-      files: []
-    });
-    saveState();
-    render();
-  }
-};
-
-window.addFile = (lessonId) => {
-    const name = prompt("Nom du fichier :");
-    if(name) { const l = findLesson(lessonId); if(l) { l.files.push({name, url:'#'}); saveState(); render(); } }
-};
-window.removeFile = (lessonId, fileName) => {
-    const l = findLesson(lessonId); if(l) { l.files = l.files.filter(f => f.name !== fileName); saveState(); render(); }
-};
-
+window.addChapter = () => { state.modules.push({ id: Date.now(), title: "Nouveau Chapitre", lessons: [] }); saveState(); render(); };
+window.deleteChapter = (id) => { if(confirm("Supprimer ?")) { state.modules = state.modules.filter(m => m.id !== id); saveState(); render(); } };
+window.addLesson = (cId) => { const m = state.modules.find(mod => mod.id === cId); if(m) { m.lessons.push({ id: Date.now(), title: "Leçon", subtitle: "...", duration: "5m", type: 'video', status: 'locked', hasVideo: true, wistiaId: '', validationRequired: false, content: '', files: [] }); saveState(); render(); } };
+window.addFile = (lId) => { const n = prompt("Nom:"); if(n) { const l = findLesson(lId); if(l) { l.files.push({name:n, url:'#'}); saveState(); render(); } } };
+window.removeFile = (lId, fN) => { const l = findLesson(lId); if(l) { l.files = l.files.filter(f => f.name !== fN); saveState(); render(); } };
 window.openEditor = (id) => { state.editingLessonId = id; render(); };
 window.closeEditor = () => { state.editingLessonId = null; render(); };
 
-// Helper
 const findLesson = (id) => state.modules.flatMap(m => m.lessons).find(l => l.id === id);
 
+// --- VUES ---
 
-// --- VUES (TEMPLATES) ---
-
-// 1. LOGIN SCREEN (La première chose qu'on voit)
 function renderLogin() {
     return `
     <div class="min-h-screen bg-slate-900 flex items-center justify-center p-4 fade-in relative overflow-hidden">
-        <!-- Deco Background -->
         <div class="absolute top-0 left-0 w-full h-full overflow-hidden z-0 opacity-20 pointer-events-none">
              <div class="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-600 rounded-full blur-[100px]"></div>
              <div class="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-orange-600 rounded-full blur-[100px]"></div>
         </div>
-
         <div class="bg-white w-full max-w-md rounded-[2.5rem] p-8 md:p-12 shadow-2xl relative z-10">
             <div class="text-center mb-10">
                 <div class="w-20 h-20 bg-slate-900 text-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-slate-300">
@@ -284,201 +295,124 @@ function renderLogin() {
                 <h1 class="text-3xl font-black text-slate-900 mb-2">GIA Élite</h1>
                 <p class="text-slate-400 font-bold uppercase text-xs tracking-widest">Plateforme de formation privée</p>
             </div>
-
             <form onsubmit="event.preventDefault(); login(this.email.value, this.password.value);" class="space-y-6">
-                <div>
-                    <label class="block text-xs font-black uppercase text-slate-400 mb-2 tracking-widest ml-2">Email</label>
-                    <input type="email" name="email" required 
-                           class="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-xl focus:border-indigo-500 focus:bg-white outline-none transition-all font-bold text-slate-700"
-                           placeholder="votre@email.com" />
-                </div>
-                <div>
-                    <label class="block text-xs font-black uppercase text-slate-400 mb-2 tracking-widest ml-2">Mot de passe</label>
-                    <input type="password" name="password" required 
-                           class="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-xl focus:border-indigo-500 focus:bg-white outline-none transition-all font-bold text-slate-700"
-                           placeholder="••••••••" />
-                </div>
-                
-                <button type="submit" class="w-full bg-slate-900 text-white py-5 rounded-xl font-black text-lg shadow-xl shadow-slate-300 hover:translate-y-[-2px] hover:shadow-2xl transition-all flex items-center justify-center gap-2">
-                    Se connecter <i data-lucide="arrow-right" class="w-5 h-5"></i>
-                </button>
+                <div><label class="block text-xs font-black uppercase text-slate-400 mb-2 tracking-widest ml-2">Email</label><input type="email" name="email" required class="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-xl focus:border-indigo-500 font-bold text-slate-700" placeholder="votre@email.com" /></div>
+                <div><label class="block text-xs font-black uppercase text-slate-400 mb-2 tracking-widest ml-2">Mot de passe</label><input type="password" name="password" required class="w-full bg-slate-50 border-2 border-slate-100 p-4 rounded-xl focus:border-indigo-500 font-bold text-slate-700" placeholder="••••••••" /></div>
+                <button type="submit" class="w-full bg-slate-900 text-white py-5 rounded-xl font-black text-lg shadow-xl hover:translate-y-[-2px] transition-all flex items-center justify-center gap-2">Se connecter <i data-lucide="arrow-right" class="w-5 h-5"></i></button>
             </form>
-            
-            <div class="mt-8 pt-6 border-t border-slate-100 text-center space-y-2">
-                <p class="text-xs text-slate-400 font-bold uppercase tracking-wider">Accès Démo</p>
-                <div class="flex gap-2 justify-center text-[10px] text-slate-500 font-mono bg-slate-50 p-2 rounded-lg inline-block">
-                    <span>admin@gia.com (admin)</span>
-                    <span class="text-slate-300">|</span>
-                    <span>eleve@gia.com (123)</span>
-                </div>
-            </div>
+            <div class="mt-8 pt-6 border-t border-slate-100 text-center space-y-2"><p class="text-xs text-slate-400 font-bold uppercase tracking-wider">Accès Démo</p><div class="flex gap-2 justify-center text-[10px] text-slate-500 font-mono bg-slate-50 p-2 rounded-lg inline-block"><span>admin@gia.com (admin)</span><span class="text-slate-300">|</span><span>eleve@gia.com (123)</span></div></div>
         </div>
-    </div>
-    `;
+    </div>`;
 }
 
-// 2. GESTION DES ÉLÈVES (ADMIN)
 function renderStudentManagement() {
-    // On ne récupère que les élèves, pas l'admin
     const students = state.users.filter(u => u.role === 'student');
-    
+    // Récupérer toutes les leçons qui nécessitent une validation pour créer la liste des checkpoints
+    const checkpoints = state.modules.flatMap(m => m.lessons.filter(l => l.validationRequired));
+
     return `
     <div class="h-full bg-admin-grid p-8 lg:p-12 overflow-y-auto fade-in">
         <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 max-w-6xl mx-auto gap-6">
             <div>
                 <h1 class="text-4xl font-black text-slate-900 mb-2">Mes Apprentis</h1>
-                <p class="text-slate-500 font-bold uppercase tracking-widest">Gérez les accès à votre formation</p>
+                <p class="text-slate-500 font-bold uppercase tracking-widest">Suivez et validez la progression</p>
             </div>
-            <!-- Bouton Ajouter un élève -->
-            <button onclick="document.getElementById('add-student-modal').classList.remove('hidden')" class="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-lg shadow-indigo-200 hover:scale-105 transition-all">
-                <i data-lucide="user-plus" class="w-5 h-5"></i> Ajouter un élève
-            </button>
+            <button onclick="document.getElementById('add-student-modal').classList.remove('hidden')" class="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-lg hover:scale-105 transition-all"><i data-lucide="user-plus" class="w-5 h-5"></i> Ajouter un élève</button>
         </header>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl mx-auto">
-            ${students.map(student => `
-                <div class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-xl hover:shadow-2xl transition-all group relative overflow-hidden">
-                    <div class="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                         <button onclick="deleteUser(${student.id})" class="p-2 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-colors" title="Supprimer l'accès">
-                            <i data-lucide="trash-2" class="w-4 h-4"></i>
-                         </button>
-                    </div>
-
-                    <div class="flex items-center gap-4 mb-6">
-                        <img src="${student.avatar}" class="w-16 h-16 rounded-2xl border-2 border-slate-50 shadow-sm" />
-                        <div class="min-w-0">
-                            <h3 class="text-xl font-black text-slate-900 leading-tight truncate">${student.name}</h3>
-                            <p class="text-xs text-slate-400 font-bold truncate">${student.email}</p>
-                        </div>
-                    </div>
-                    
-                    <div class="space-y-4 mb-6">
-                        <div>
-                            <div class="flex justify-between text-xs font-bold uppercase text-slate-400 mb-1">
-                                <span>Progression</span>
-                                <span>${student.progression}%</span>
-                            </div>
-                            <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                                <div class="bg-indigo-500 h-full rounded-full" style="width: ${student.progression}%"></div>
-                            </div>
-                        </div>
-                        <div class="flex items-center justify-between p-3 bg-slate-50 rounded-xl">
-                            <span class="text-xs font-bold text-slate-500 uppercase">Points XP</span>
-                            <span class="font-black text-orange-500 flex items-center gap-1">
-                                <i data-lucide="award" class="w-4 h-4"></i> ${student.points}
-                            </span>
-                        </div>
-                    </div>
-
-                    <button onclick="window.location.href='mailto:${student.email}'" class="w-full py-3 rounded-xl border-2 border-slate-100 font-bold text-slate-600 hover:border-slate-900 hover:text-slate-900 transition-all flex items-center justify-center gap-2 text-sm">
-                        <i data-lucide="mail" class="w-4 h-4"></i> Envoyer un email
-                    </button>
-                </div>
-            `).join('')}
-            
-            <!-- Empty State -->
-            ${students.length === 0 ? `
-                <div class="col-span-full py-20 text-center">
-                    <div class="inline-block p-6 bg-slate-100 rounded-full mb-4 text-slate-400">
-                        <i data-lucide="users" class="w-12 h-12"></i>
-                    </div>
-                    <h3 class="text-xl font-bold text-slate-900">Aucun élève inscrit</h3>
-                    <p class="text-slate-500 mt-2">Cliquez sur "Ajouter un élève" pour créer le premier compte.</p>
-                </div>
-            ` : ''}
-        </div>
-
-        <!-- Modal Ajout Élève (Caché par défaut) -->
-        <div id="add-student-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4">
-            <div class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm transition-opacity" onclick="this.parentElement.classList.add('hidden')"></div>
-            <div class="bg-white w-full max-w-md rounded-[2rem] p-8 relative z-10 shadow-2xl scale-100 transition-transform">
-                <div class="flex justify-between items-center mb-6">
-                    <h3 class="text-2xl font-black text-slate-900">Nouvel Apprenti</h3>
-                    <button onclick="document.getElementById('add-student-modal').classList.add('hidden')" class="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-900"><i data-lucide="x" class="w-6 h-6"></i></button>
-                </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 max-w-6xl mx-auto">
+            ${students.map(student => {
+                // Trouver le prochain blocage
+                const studentValidated = student.validatedLessons || [];
+                const nextCheckpoint = checkpoints.find(c => !studentValidated.includes(c.id));
                 
-                <form onsubmit="event.preventDefault(); createStudent(this.name.value, this.email.value, this.password.value);" class="space-y-4">
-                    <div>
-                        <label class="text-xs font-bold uppercase text-slate-400 ml-2 mb-1 block">Nom complet</label>
-                        <input name="name" type="text" required placeholder="ex: Thomas Durand" class="w-full bg-slate-50 border-2 border-slate-100 p-3 rounded-xl font-bold focus:border-indigo-500 outline-none">
-                    </div>
-                    <div>
-                        <label class="text-xs font-bold uppercase text-slate-400 ml-2 mb-1 block">Email (Identifiant)</label>
-                        <input name="email" type="email" required placeholder="thomas@mail.com" class="w-full bg-slate-50 border-2 border-slate-100 p-3 rounded-xl font-bold focus:border-indigo-500 outline-none">
-                    </div>
-                    <div>
-                        <label class="text-xs font-bold uppercase text-slate-400 ml-2 mb-1 block">Mot de passe provisoire</label>
-                        <input name="password" type="text" required placeholder="ex: Guitare2024!" class="w-full bg-slate-50 border-2 border-slate-100 p-3 rounded-xl font-bold focus:border-indigo-500 outline-none">
+                return `
+                <div class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-xl flex flex-col h-full">
+                    <div class="flex items-center justify-between mb-6">
+                        <div class="flex items-center gap-4">
+                            <img src="${student.avatar}" class="w-14 h-14 rounded-2xl border-2 border-slate-50" />
+                            <div class="min-w-0">
+                                <h3 class="text-lg font-black text-slate-900 truncate">${student.name}</h3>
+                                <p class="text-xs text-slate-400 font-bold truncate">${student.email}</p>
+                            </div>
+                        </div>
+                        <button onclick="deleteUser(${student.id})" class="text-slate-300 hover:text-red-500"><i data-lucide="trash-2" class="w-5 h-5"></i></button>
                     </div>
                     
-                    <div class="pt-4">
-                        <button class="w-full bg-indigo-600 text-white py-4 rounded-xl font-black shadow-lg shadow-indigo-200 hover:translate-y-[-2px] transition-all">
-                            Créer le compte
-                        </button>
-                        <p class="text-[10px] text-center text-slate-400 mt-4">L'élève pourra modifier son mot de passe plus tard.</p>
+                    <!-- Progress Bar -->
+                    <div class="mb-6">
+                        <div class="flex justify-between text-xs font-bold uppercase text-slate-400 mb-1">
+                            <span>Progression</span><span>${student.progression}%</span>
+                        </div>
+                        <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                            <div class="bg-indigo-500 h-full rounded-full" style="width: ${student.progression}%"></div>
+                        </div>
                     </div>
+
+                    <!-- Checkpoints Section -->
+                    <div class="bg-slate-50 rounded-xl p-4 flex-1 border border-slate-100">
+                        <h4 class="text-xs font-black uppercase text-slate-400 mb-3 tracking-widest flex items-center gap-2">
+                            <i data-lucide="flag" class="w-3 h-3"></i> Checkpoints
+                        </h4>
+                        <div class="space-y-2">
+                            ${checkpoints.map(cp => {
+                                const isDone = studentValidated.includes(cp.id);
+                                return `
+                                <div class="flex items-center justify-between p-2 rounded-lg ${isDone ? 'bg-emerald-50 border border-emerald-100' : 'bg-white border border-slate-200'}">
+                                    <span class="text-xs font-bold ${isDone ? 'text-emerald-700' : 'text-slate-600'} truncate mr-2">${cp.title}</span>
+                                    <label class="switch scale-75 origin-right">
+                                        <input type="checkbox" ${isDone ? 'checked' : ''} onchange="toggleStudentValidation(${student.id}, ${cp.id}, this.checked)">
+                                        <span class="slider"></span>
+                                    </label>
+                                </div>
+                                `;
+                            }).join('')}
+                            ${checkpoints.length === 0 ? '<p class="text-xs text-slate-400 italic">Aucun checkpoint défini.</p>' : ''}
+                        </div>
+                    </div>
+
+                    ${nextCheckpoint ? `
+                        <div class="mt-4 p-3 bg-orange-50 rounded-xl border border-orange-100 flex items-center gap-3">
+                            <div class="bg-orange-100 p-2 rounded-lg text-orange-600"><i data-lucide="lock" class="w-4 h-4"></i></div>
+                            <div>
+                                <p class="text-[10px] uppercase font-bold text-orange-400">Actuellement bloqué à</p>
+                                <p class="text-xs font-bold text-slate-800 line-clamp-1">${nextCheckpoint.title}</p>
+                            </div>
+                        </div>
+                    ` : `
+                        <div class="mt-4 p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-center">
+                            <p class="text-xs font-bold text-emerald-600">Tout est validé ! 🎉</p>
+                        </div>
+                    `}
+                </div>
+            `;}).join('')}
+        </div>
+        
+        <!-- Add Student Modal (Same as before) -->
+        <div id="add-student-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <div class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onclick="this.parentElement.classList.add('hidden')"></div>
+            <div class="bg-white w-full max-w-md rounded-[2rem] p-8 relative z-10 shadow-2xl">
+                <h3 class="text-2xl font-black text-slate-900 mb-6">Nouvel Apprenti</h3>
+                <form onsubmit="event.preventDefault(); createStudent(this.name.value, this.email.value, this.password.value);" class="space-y-4">
+                    <input name="name" type="text" required placeholder="Nom complet" class="w-full bg-slate-50 border p-3 rounded-xl font-bold">
+                    <input name="email" type="email" required placeholder="Email" class="w-full bg-slate-50 border p-3 rounded-xl font-bold">
+                    <input name="password" type="text" required placeholder="Mot de passe" class="w-full bg-slate-50 border p-3 rounded-xl font-bold">
+                    <button class="w-full bg-indigo-600 text-white py-4 rounded-xl font-black mt-2">Créer le compte</button>
                 </form>
             </div>
         </div>
-    </div>
-    `;
+    </div>`;
 }
 
-// 3. DASHBOARD
-function renderDashboard() {
-  const user = getCurrentUser();
-  return `
-    <div class="h-full overflow-y-auto p-8 lg:p-12 bg-slate-50 fade-in">
-        <header class="mb-12 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-                <h1 class="text-4xl lg:text-6xl font-black text-slate-900 mb-4">Bonjour ${user.name.split(' ')[0]}</h1>
-                <p class="text-xl text-slate-500">Prêt à faire sonner votre guitare aujourd'hui ?</p>
-            </div>
-            ${user.role === 'admin' ? '<span class="bg-indigo-900 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-200">Mode Formateur</span>' : ''}
-        </header>
-        
-        <div class="grid grid-cols-12 gap-8">
-            <!-- Hero Card -->
-            <div class="col-span-12 lg:col-span-8 bg-white p-10 rounded-[2.5rem] shadow-premium border border-slate-100 relative overflow-hidden group cursor-pointer" onclick="setView('classroom')">
-                <div class="relative z-10 max-w-lg">
-                    <span class="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest mb-6 inline-block">Reprendre</span>
-                    <h2 class="text-4xl font-black text-slate-900 mb-6 leading-tight">Accorder sa guitare</h2>
-                    <p class="text-slate-500 text-lg mb-8 font-medium">Vous aviez commencé le Chapitre 1. C'est le moment idéal pour valider cette étape.</p>
-                    <button class="bg-slate-900 text-white px-8 py-4 rounded-xl font-black flex items-center gap-3 hover:gap-5 transition-all shadow-xl">
-                        Continuer <i data-lucide="arrow-right"></i>
-                    </button>
-                </div>
-                <img src="https://picsum.photos/seed/guitar/600/400" class="absolute right-0 top-0 h-full w-1/2 object-cover opacity-20 mask-image-gradient group-hover:scale-105 transition-transform duration-700" style="mask-image: linear-gradient(to right, transparent, black);" />
-            </div>
-
-            <!-- Stats -->
-            <div class="col-span-12 lg:col-span-4 bg-orange-500 p-10 rounded-[2.5rem] shadow-xl text-white flex flex-col justify-between relative overflow-hidden">
-                <div class="relative z-10">
-                    <div class="flex justify-between items-start mb-4">
-                         <div class="p-3 bg-white/20 rounded-2xl backdrop-blur-sm"><i data-lucide="activity" class="w-8 h-8 text-white"></i></div>
-                         <span class="text-5xl font-black">${user.progression}%</span>
-                    </div>
-                    <p class="text-orange-100 font-bold text-lg">Progression Globale</p>
-                </div>
-                <div class="relative z-10 mt-8">
-                    <div class="w-full bg-black/20 h-3 rounded-full overflow-hidden">
-                        <div class="bg-white h-full rounded-full" style="width: ${user.progression}%"></div>
-                    </div>
-                </div>
-                <i data-lucide="award" class="absolute -bottom-6 -right-6 w-40 h-40 text-orange-400 opacity-50 rotate-12"></i>
-            </div>
-        </div>
-    </div>
-  `;
-}
-
-// 4. CLASSROOM (Lecteur)
 function renderClassroom() {
   const currentLesson = findLesson(state.activeLessonId);
   if(!currentLesson) { state.activeLessonId = state.modules[0]?.lessons[0]?.id; render(); return ''; }
   
   const currentUser = getCurrentUser();
-  const isAdmin = currentUser && currentUser.role === 'admin';
+  const isAdmin = currentUser.role === 'admin';
+  
+  // CALCUL DES ACCÈS
+  const accessibleLessons = getAccessibleLessons(currentUser);
 
   return `
     <div class="flex h-full bg-slate-900">
@@ -497,13 +431,23 @@ function renderClassroom() {
                         ${state.expandedModules.includes(mod.id) ? `
                             <div class="space-y-1 mt-1">
                                 ${mod.lessons.map(l => {
+                                    // LOGIQUE DE VERROUILLAGE DYNAMIQUE
+                                    const isAccessible = accessibleLessons.has(l.id);
                                     const isActive = l.id === state.activeLessonId;
-                                    const isLocked = l.status === 'locked' && !isAdmin; // Admin voit tout déverrouillé
+                                    const isLocked = !isAccessible;
+                                    
+                                    // Status pour affichage
+                                    let icon = isLocked ? 'lock' : (isActive ? 'play' : 'circle');
+                                    if (l.validationRequired) icon = 'flag'; // Icone spéciale pour les checkpoints
+                                    if (l.validationRequired && currentUser.validatedLessons?.includes(l.id)) icon = 'check-circle'; // Validé
+
                                     return `
-                                        <div onclick="${isLocked ? '' : `setActiveLesson(${l.id})`}" class="p-4 rounded-xl flex items-center gap-4 cursor-pointer transition-all ${isActive ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/50' : 'hover:bg-white/5 text-slate-500'} ${isLocked ? 'opacity-40 cursor-not-allowed' : ''}">
-                                            <i data-lucide="${isLocked ? 'lock' : (isActive ? 'play' : 'circle')}" class="w-4 h-4 ${isActive ? 'fill-current' : ''} flex-shrink-0"></i>
-                                            <span class="text-sm font-bold leading-tight flex-1">${l.title}</span>
-                                            ${l.validationRequired ? '<span title="Validation requise" class="text-lg filter drop-shadow-sm">🎯</span>' : ''}
+                                        <div onclick="${isLocked ? '' : `setActiveLesson(${l.id})`}" class="p-4 rounded-xl flex items-center gap-4 transition-all ${isActive ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/50' : 'hover:bg-white/5 text-slate-500'} ${isLocked ? 'opacity-40 cursor-not-allowed bg-slate-900/50' : 'cursor-pointer'}">
+                                            <i data-lucide="${icon}" class="w-4 h-4 ${isActive ? 'fill-current' : ''} flex-shrink-0 ${l.validationRequired && !isLocked && !currentUser.validatedLessons?.includes(l.id) ? 'text-orange-400 animate-pulse' : ''}"></i>
+                                            <div class="flex-1 min-w-0">
+                                                <span class="text-sm font-bold leading-tight block truncate">${l.title}</span>
+                                            </div>
+                                            ${l.validationRequired ? '<span title="Validation requise" class="text-sm filter drop-shadow-sm">🎯</span>' : ''}
                                         </div>
                                     `;
                                 }).join('')}
@@ -517,7 +461,6 @@ function renderClassroom() {
         <!-- Player Area -->
         <div class="flex-1 flex flex-col relative h-full overflow-hidden">
             <div class="flex-1 bg-slate-900 overflow-y-auto custom-scrollbar relative">
-                <!-- Wrapper centré -->
                 <div class="min-h-full flex flex-col items-center justify-center p-8 lg:p-16">
                     <div class="w-full max-w-5xl">
                        <div class="aspect-video video-frame mb-8 shadow-2xl">
@@ -547,10 +490,14 @@ function renderClassroom() {
                                </button>
                                
                                ${currentLesson.validationRequired ? `
-                                   <button onclick="window.open('https://wa.me/?text=Bonjour,%20je%20souhaite%20valider%20la%20leçon%20${encodeURIComponent(currentLesson.title)}', '_blank')" class="bg-emerald-500 hover:bg-emerald-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-emerald-900/20 transition-all flex items-center gap-2 hover:scale-105">
+                                   ${currentUser.validatedLessons?.includes(currentLesson.id) ? 
+                                   `<div class="px-8 py-3 rounded-xl font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 flex items-center gap-2"><i data-lucide="check-circle" class="w-5 h-5"></i> Validé</div>` 
+                                   : 
+                                   `<button onclick="window.open('https://wa.me/?text=Bonjour,%20je%20souhaite%20valider%20la%20leçon%20${encodeURIComponent(currentLesson.title)}', '_blank')" class="bg-emerald-500 hover:bg-emerald-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-emerald-900/20 transition-all flex items-center gap-2 hover:scale-105">
                                        <i data-lucide="message-circle" class="w-5 h-5"></i> Valider par WhatsApp
-                                   </button>
+                                   </button>`}
                                ` : `
+                                   <!-- Bouton Suivant Standard (logique à affiner pour auto-next, ici simple placeholder) -->
                                    <button class="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-orange-900/20 transition-all">
                                        SUIVANT
                                    </button>
@@ -573,20 +520,11 @@ function renderClassroom() {
                         ${currentLesson.validationRequired ? '🎯' : ''}
                     </h2>
                     <div class="text-lg text-slate-600 leading-relaxed whitespace-pre-wrap mb-10">${currentLesson.content || "Aucune note disponible."}</div>
-                    
                     ${currentLesson.files.length > 0 ? `
                         <div class="bg-slate-50 p-6 rounded-2xl border border-slate-100 not-prose">
                             <h4 class="text-xs font-black uppercase text-slate-400 mb-4 tracking-widest">Téléchargements</h4>
                             <div class="space-y-3">
-                                ${currentLesson.files.map(f => `
-                                    <a href="#" class="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl hover:border-indigo-500 hover:shadow-md transition-all group">
-                                        <div class="flex items-center gap-3">
-                                            <i data-lucide="file-text" class="w-5 h-5 text-slate-400 group-hover:text-indigo-500 transition-colors"></i>
-                                            <span class="font-bold text-slate-700">${f.name}</span>
-                                        </div>
-                                        <i data-lucide="download-cloud" class="w-5 h-5 text-slate-300"></i>
-                                    </a>
-                                `).join('')}
+                                ${currentLesson.files.map(f => `<a href="#" class="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl hover:border-indigo-500 hover:shadow-md transition-all group"><div class="flex items-center gap-3"><i data-lucide="file-text" class="w-5 h-5 text-slate-400 group-hover:text-indigo-500 transition-colors"></i><span class="font-bold text-slate-700">${f.name}</span></div><i data-lucide="download-cloud" class="w-5 h-5 text-slate-300"></i></a>`).join('')}
                             </div>
                         </div>
                     ` : ''}
@@ -598,7 +536,31 @@ function renderClassroom() {
   `;
 }
 
-// 5. PROFILE
+// Les autres vues (Dashboard, Admin, Profile, LessonEditor) restent inchangées ou utilisent les fonctions globales.
+// Je réintègre les fonctions inchangées pour garder le fichier complet et fonctionnel.
+
+function renderDashboard() {
+  const user = getCurrentUser();
+  return `
+    <div class="h-full overflow-y-auto p-8 lg:p-12 bg-slate-50 fade-in">
+        <header class="mb-12 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div><h1 class="text-4xl lg:text-6xl font-black text-slate-900 mb-4">Bonjour ${user.name.split(' ')[0]}</h1><p class="text-xl text-slate-500">Prêt à faire sonner votre guitare aujourd'hui ?</p></div>
+            ${user.role === 'admin' ? '<span class="bg-indigo-900 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-200">Mode Formateur</span>' : ''}
+        </header>
+        <div class="grid grid-cols-12 gap-8">
+            <div class="col-span-12 lg:col-span-8 bg-white p-10 rounded-[2.5rem] shadow-premium border border-slate-100 relative overflow-hidden group cursor-pointer" onclick="setView('classroom')">
+                <div class="relative z-10 max-w-lg"><span class="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest mb-6 inline-block">Reprendre</span><h2 class="text-4xl font-black text-slate-900 mb-6 leading-tight">Accorder sa guitare</h2><p class="text-slate-500 text-lg mb-8 font-medium">Continuez votre progression.</p><button class="bg-slate-900 text-white px-8 py-4 rounded-xl font-black flex items-center gap-3 hover:gap-5 transition-all shadow-xl">Continuer <i data-lucide="arrow-right"></i></button></div>
+                <img src="https://picsum.photos/seed/guitar/600/400" class="absolute right-0 top-0 h-full w-1/2 object-cover opacity-20 mask-image-gradient group-hover:scale-105 transition-transform duration-700" style="mask-image: linear-gradient(to right, transparent, black);" />
+            </div>
+            <div class="col-span-12 lg:col-span-4 bg-orange-500 p-10 rounded-[2.5rem] shadow-xl text-white flex flex-col justify-between relative overflow-hidden">
+                <div class="relative z-10"><div class="flex justify-between items-start mb-4"><div class="p-3 bg-white/20 rounded-2xl backdrop-blur-sm"><i data-lucide="activity" class="w-8 h-8 text-white"></i></div><span class="text-5xl font-black">${user.progression}%</span></div><p class="text-orange-100 font-bold text-lg">Progression Globale</p></div>
+                <div class="relative z-10 mt-8"><div class="w-full bg-black/20 h-3 rounded-full overflow-hidden"><div class="bg-white h-full rounded-full" style="width: ${user.progression}%"></div></div></div>
+                <i data-lucide="award" class="absolute -bottom-6 -right-6 w-40 h-40 text-orange-400 opacity-50 rotate-12"></i>
+            </div>
+        </div>
+    </div>`;
+}
+
 function renderProfile() {
     const user = getCurrentUser();
     return `
@@ -607,137 +569,29 @@ function renderProfile() {
             <img src="${user.avatar}" class="w-32 h-32 rounded-3xl mx-auto mb-6 shadow-lg border-4 border-white" />
             <h2 class="text-3xl font-black text-slate-900 mb-1">${user.name}</h2>
             <p class="text-slate-400 font-bold mb-8">${user.email}</p>
-            
             <div class="flex justify-center gap-6 mb-10">
-                <div class="bg-orange-50 p-4 rounded-2xl">
-                    <span class="block text-2xl font-black text-orange-600">${user.points}</span>
-                    <span class="text-xs font-bold uppercase text-orange-400">XP Points</span>
-                </div>
-                <div class="bg-indigo-50 p-4 rounded-2xl">
-                    <span class="block text-2xl font-black text-indigo-600">${user.progression}%</span>
-                    <span class="text-xs font-bold uppercase text-indigo-400">Progrès</span>
-                </div>
+                <div class="bg-orange-50 p-4 rounded-2xl"><span class="block text-2xl font-black text-orange-600">${user.points}</span><span class="text-xs font-bold uppercase text-orange-400">XP Points</span></div>
+                <div class="bg-indigo-50 p-4 rounded-2xl"><span class="block text-2xl font-black text-indigo-600">${user.progression}%</span><span class="text-xs font-bold uppercase text-indigo-400">Progrès</span></div>
             </div>
-            
-            <button onclick="logout()" class="w-full py-4 border-2 border-slate-200 text-slate-500 font-black rounded-xl hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all flex items-center justify-center gap-2">
-                <i data-lucide="log-out" class="w-5 h-5"></i> Se déconnecter
-            </button>
+            <button onclick="logout()" class="w-full py-4 border-2 border-slate-200 text-slate-500 font-black rounded-xl hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all flex items-center justify-center gap-2"><i data-lucide="log-out" class="w-5 h-5"></i> Se déconnecter</button>
         </div>
     </div>`;
 }
 
-// 6. ÉDITEUR (ADMIN)
-function renderLessonEditor() {
-  const lesson = findLesson(state.editingLessonId);
-  if (!lesson) return '';
-
-  return `
-    <div class="fixed inset-0 z-[100] flex items-center justify-center p-4 lg:p-8 fade-in">
-        <div class="absolute inset-0 modal-overlay" onclick="closeEditor()"></div>
-        <div class="bg-white w-full max-w-6xl h-full max-h-[95vh] rounded-[2.5rem] shadow-2xl z-10 flex flex-col overflow-hidden">
-            <header class="px-8 py-6 border-b bg-slate-50 flex justify-between items-center">
-                <div>
-                    <h2 class="text-2xl font-black text-slate-900 flex items-center gap-3">
-                        <i data-lucide="edit-3" class="w-6 h-6 text-indigo-600"></i> Édition
-                    </h2>
-                    <p class="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Leçon ID: ${lesson.id}</p>
-                </div>
-                <button onclick="closeEditor()" class="p-3 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-full transition-colors"><i data-lucide="x" class="w-8 h-8"></i></button>
-            </header>
-            
-            <div class="flex-1 overflow-y-auto p-8 lg:p-10 grid grid-cols-12 gap-10 bg-white">
-                <div class="col-span-12 lg:col-span-7 space-y-8">
-                    <div class="group">
-                        <label class="block text-xs font-black uppercase text-slate-400 mb-2 tracking-widest">Titre de la leçon</label>
-                        <input type="text" value="${lesson.title}" oninput="updateLessonTitle(${lesson.id}, this.value)" class="w-full text-2xl font-bold bg-slate-50 border-2 border-slate-100 p-4 rounded-xl focus:border-indigo-500 outline-none transition-all" />
-                    </div>
-                    <div class="group h-full flex flex-col">
-                        <label class="block text-xs font-black uppercase text-slate-400 mb-2 tracking-widest">Contenu Pédagogique</label>
-                        <textarea oninput="updateLessonContent(${lesson.id}, this.value)" class="w-full flex-1 min-h-[300px] text-lg bg-slate-50 border-2 border-slate-100 p-6 rounded-xl focus:border-indigo-500 outline-none resize-none leading-relaxed">${lesson.content || ''}</textarea>
-                    </div>
-                </div>
-
-                <div class="col-span-12 lg:col-span-5 space-y-6">
-                    <div class="p-6 rounded-2xl border-4 ${lesson.status === 'locked' ? 'border-slate-100 bg-slate-50' : 'border-emerald-100 bg-emerald-50/50'} transition-colors">
-                        <div class="flex items-center justify-between mb-3">
-                            <div class="flex items-center gap-3">
-                                <div class="p-3 rounded-xl ${lesson.status === 'locked' ? 'bg-slate-200 text-slate-500' : 'bg-emerald-200 text-emerald-700'}"><i data-lucide="${lesson.status === 'locked' ? 'lock' : 'unlock'}" class="w-6 h-6"></i></div>
-                                <div><h3 class="font-black text-slate-900">Accès Élève</h3><p class="text-xs font-bold ${lesson.status === 'locked' ? 'text-slate-400' : 'text-emerald-600'} uppercase">${lesson.status === 'locked' ? 'Verrouillé' : 'Ouvert'}</p></div>
-                            </div>
-                            <label class="switch"><input type="checkbox" ${lesson.status !== 'locked' ? 'checked' : ''} onchange="toggleLessonLock(${lesson.id}, !this.checked)"><span class="slider"></span></label>
-                        </div>
-                    </div>
-                    
-                    <div class="bg-orange-50/50 p-6 rounded-2xl border-4 border-orange-100/50">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-3">
-                                <div class="p-3 rounded-xl bg-orange-100 text-orange-600"><span class="text-2xl leading-none filter drop-shadow-sm">🎯</span></div>
-                                <div><h3 class="font-black text-slate-900">Validation Requise</h3><p class="text-xs font-bold text-orange-500 uppercase">Devoir à rendre</p></div>
-                            </div>
-                            <label class="switch"><input type="checkbox" ${lesson.validationRequired ? 'checked' : ''} onchange="toggleLessonValidation(${lesson.id}, this.checked)"><span class="slider"></span></label>
-                        </div>
-                    </div>
-
-                    <div class="bg-indigo-600 p-6 rounded-2xl text-white shadow-xl shadow-indigo-200">
-                        <div class="flex items-center gap-2 mb-4 opacity-80"><i data-lucide="video" class="w-4 h-4"></i><span class="text-xs font-black uppercase tracking-widest">Intégration Vidéo</span></div>
-                        <div class="bg-indigo-800/50 p-4 rounded-xl border border-indigo-400/30">
-                            <label class="block text-[10px] uppercase font-bold text-indigo-200 mb-1">ID Wistia</label>
-                            <input type="text" value="${lesson.wistiaId || ''}" oninput="updateLessonWistia(${lesson.id}, this.value)" class="w-full bg-transparent border-none text-white font-mono text-lg focus:outline-none placeholder:text-indigo-400" placeholder="ex: 30q789" />
-                        </div>
-                    </div>
-
-                    <div class="border-t border-slate-100 pt-6">
-                        <div class="flex items-center justify-between mb-4">
-                            <span class="text-xs font-black uppercase text-slate-400 tracking-widest">Fichiers joints</span>
-                            <button onclick="addFile(${lesson.id})" class="text-xs font-bold bg-slate-900 text-white px-3 py-1.5 rounded-lg hover:bg-slate-700 transition-colors">+ Ajouter</button>
-                        </div>
-                        <div class="space-y-2">
-                            ${lesson.files.map(f => `
-                                <div class="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl shadow-sm">
-                                    <div class="flex items-center gap-3 overflow-hidden">
-                                        <div class="w-8 h-8 bg-orange-100 text-orange-600 rounded-lg flex items-center justify-center flex-shrink-0"><i data-lucide="file" class="w-4 h-4"></i></div>
-                                        <span class="text-sm font-bold text-slate-700 truncate">${f.name}</span>
-                                    </div>
-                                    <button onclick="removeFile(${lesson.id}, '${f.name}')" class="text-slate-300 hover:text-red-500 p-1"><i data-lucide="trash" class="w-4 h-4"></i></button>
-                                </div>
-                            `).join('')}
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <footer class="p-6 border-t bg-slate-50 flex justify-end">
-                <button onclick="closeEditor()" class="bg-slate-900 text-white px-10 py-4 rounded-xl font-black text-lg shadow-xl hover:translate-y-[-2px] transition-all">Enregistrer & Fermer</button>
-            </footer>
-        </div>
-    </div>
-  `;
-}
-
-// 7. DASHBOARD ADMIN (Gestion Contenu)
 function renderAdmin() {
   return `
     <div class="h-full bg-admin-grid p-8 lg:p-12 overflow-y-auto pb-40 fade-in">
         <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-16 max-w-5xl mx-auto gap-6">
-            <div>
-                <h1 class="text-4xl lg:text-5xl font-black text-slate-900 mb-2">Contenu du Cours</h1>
-                <p class="text-lg text-slate-500 font-bold uppercase tracking-widest">Modifiez la structure</p>
-            </div>
-            <button onclick="addChapter()" class="bg-indigo-600 text-white px-6 py-3 lg:px-8 lg:py-4 rounded-2xl font-black flex items-center gap-3 shadow-lg shadow-indigo-200 hover:scale-105 transition-all">
-                <i data-lucide="plus-circle" class="w-5 h-5"></i> Nouveau Chapitre
-            </button>
+            <div><h1 class="text-4xl lg:text-5xl font-black text-slate-900 mb-2">Contenu du Cours</h1><p class="text-lg text-slate-500 font-bold uppercase tracking-widest">Modifiez la structure</p></div>
+            <button onclick="addChapter()" class="bg-indigo-600 text-white px-6 py-3 lg:px-8 lg:py-4 rounded-2xl font-black flex items-center gap-3 shadow-lg shadow-indigo-200 hover:scale-105 transition-all"><i data-lucide="plus-circle" class="w-5 h-5"></i> Nouveau Chapitre</button>
         </header>
-
         <div class="space-y-12 max-w-5xl mx-auto">
             ${state.modules.map(mod => `
                 <div class="bg-white p-8 lg:p-10 rounded-[2.5rem] border border-slate-200 shadow-premium group/module">
                     <div class="flex items-center justify-between mb-8 pb-6 border-b border-slate-100">
-                        <div class="flex-1 mr-4">
-                             <input type="text" value="${mod.title}" oninput="updateChapterTitle(${mod.id}, this.value)" class="w-full text-2xl lg:text-3xl font-black text-slate-900 bg-transparent outline-none focus:text-indigo-600 transition-colors placeholder:text-slate-200" placeholder="Titre du chapitre..." />
-                        </div>
+                        <div class="flex-1 mr-4"><input type="text" value="${mod.title}" oninput="updateChapterTitle(${mod.id}, this.value)" class="w-full text-2xl lg:text-3xl font-black text-slate-900 bg-transparent outline-none focus:text-indigo-600 transition-colors placeholder:text-slate-200" placeholder="Titre du chapitre..." /></div>
                         <button onclick="deleteChapter(${mod.id})" class="text-slate-200 hover:text-red-500 hover:bg-red-50 p-3 rounded-xl transition-all"><i data-lucide="trash-2" class="w-6 h-6"></i></button>
                     </div>
-                    
                     <div class="space-y-4 pl-0 lg:pl-8 border-l-0 lg:border-l-2 border-slate-100">
                         ${mod.lessons.map(l => `
                             <div class="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-transparent hover:border-indigo-200 hover:bg-indigo-50/30 transition-all group/lesson">
@@ -757,18 +611,66 @@ function renderAdmin() {
             `).join('')}
         </div>
         ${state.editingLessonId ? renderLessonEditor() : ''}
-    </div>
-  `;
+    </div>`;
 }
 
-
-// --- RENDER ENGINE PRINCIPAL ---
+function renderLessonEditor() {
+  const lesson = findLesson(state.editingLessonId);
+  if (!lesson) return '';
+  return `
+    <div class="fixed inset-0 z-[100] flex items-center justify-center p-4 lg:p-8 fade-in">
+        <div class="absolute inset-0 modal-overlay" onclick="closeEditor()"></div>
+        <div class="bg-white w-full max-w-6xl h-full max-h-[95vh] rounded-[2.5rem] shadow-2xl z-10 flex flex-col overflow-hidden">
+            <header class="px-8 py-6 border-b bg-slate-50 flex justify-between items-center">
+                <div><h2 class="text-2xl font-black text-slate-900 flex items-center gap-3"><i data-lucide="edit-3" class="w-6 h-6 text-indigo-600"></i> Édition</h2><p class="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Leçon ID: ${lesson.id}</p></div>
+                <button onclick="closeEditor()" class="p-3 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-full transition-colors"><i data-lucide="x" class="w-8 h-8"></i></button>
+            </header>
+            <div class="flex-1 overflow-y-auto p-8 lg:p-10 grid grid-cols-12 gap-10 bg-white">
+                <div class="col-span-12 lg:col-span-7 space-y-8">
+                    <div class="group"><label class="block text-xs font-black uppercase text-slate-400 mb-2 tracking-widest">Titre de la leçon</label><input type="text" value="${lesson.title}" oninput="updateLessonTitle(${lesson.id}, this.value)" class="w-full text-2xl font-bold bg-slate-50 border-2 border-slate-100 p-4 rounded-xl focus:border-indigo-500 outline-none transition-all" /></div>
+                    <div class="group h-full flex flex-col"><label class="block text-xs font-black uppercase text-slate-400 mb-2 tracking-widest">Contenu Pédagogique</label><textarea oninput="updateLessonContent(${lesson.id}, this.value)" class="w-full flex-1 min-h-[300px] text-lg bg-slate-50 border-2 border-slate-100 p-6 rounded-xl focus:border-indigo-500 outline-none resize-none leading-relaxed">${lesson.content || ''}</textarea></div>
+                </div>
+                <div class="col-span-12 lg:col-span-5 space-y-6">
+                    <div class="p-6 rounded-2xl border-4 ${lesson.status === 'locked' ? 'border-slate-100 bg-slate-50' : 'border-emerald-100 bg-emerald-50/50'} transition-colors">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-3">
+                                <div class="p-3 rounded-xl ${lesson.status === 'locked' ? 'bg-slate-200 text-slate-500' : 'bg-emerald-200 text-emerald-700'}"><i data-lucide="${lesson.status === 'locked' ? 'lock' : 'unlock'}" class="w-6 h-6"></i></div>
+                                <div><h3 class="font-black text-slate-900">État Global (Brouillon)</h3><p class="text-xs font-bold ${lesson.status === 'locked' ? 'text-slate-400' : 'text-emerald-600'} uppercase">${lesson.status === 'locked' ? 'Caché' : 'Visible'}</p></div>
+                            </div>
+                            <label class="switch"><input type="checkbox" ${lesson.status !== 'locked' ? 'checked' : ''} onchange="toggleLessonLock(${lesson.id}, !this.checked)"><span class="slider"></span></label>
+                        </div>
+                    </div>
+                    <div class="bg-orange-50/50 p-6 rounded-2xl border-4 border-orange-100/50">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <div class="p-3 rounded-xl bg-orange-100 text-orange-600"><span class="text-2xl leading-none filter drop-shadow-sm">🎯</span></div>
+                                <div><h3 class="font-black text-slate-900">Checkpoint</h3><p class="text-xs font-bold text-orange-500 uppercase">Bloque la suite</p></div>
+                            </div>
+                            <label class="switch"><input type="checkbox" ${lesson.validationRequired ? 'checked' : ''} onchange="toggleLessonValidation(${lesson.id}, this.checked)"><span class="slider"></span></label>
+                        </div>
+                    </div>
+                    <div class="bg-indigo-600 p-6 rounded-2xl text-white shadow-xl shadow-indigo-200">
+                        <div class="flex items-center gap-2 mb-4 opacity-80"><i data-lucide="video" class="w-4 h-4"></i><span class="text-xs font-black uppercase tracking-widest">Intégration Vidéo</span></div>
+                        <div class="bg-indigo-800/50 p-4 rounded-xl border border-indigo-400/30">
+                            <label class="block text-[10px] uppercase font-bold text-indigo-200 mb-1">ID Wistia</label>
+                            <input type="text" value="${lesson.wistiaId || ''}" oninput="updateLessonWistia(${lesson.id}, this.value)" class="w-full bg-transparent border-none text-white font-mono text-lg focus:outline-none placeholder:text-indigo-400" placeholder="ex: 30q789" />
+                        </div>
+                    </div>
+                    <div class="border-t border-slate-100 pt-6">
+                        <div class="flex items-center justify-between mb-4"><span class="text-xs font-black uppercase text-slate-400 tracking-widest">Fichiers joints</span><button onclick="addFile(${lesson.id})" class="text-xs font-bold bg-slate-900 text-white px-3 py-1.5 rounded-lg hover:bg-slate-700 transition-colors">+ Ajouter</button></div>
+                        <div class="space-y-2">${lesson.files.map(f => `<div class="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl shadow-sm"><div class="flex items-center gap-3 overflow-hidden"><div class="w-8 h-8 bg-orange-100 text-orange-600 rounded-lg flex items-center justify-center flex-shrink-0"><i data-lucide="file" class="w-4 h-4"></i></div><span class="text-sm font-bold text-slate-700 truncate">${f.name}</span></div><button onclick="removeFile(${lesson.id}, '${f.name}')" class="text-slate-300 hover:text-red-500 p-1"><i data-lucide="trash" class="w-4 h-4"></i></button></div>`).join('')}</div>
+                    </div>
+                </div>
+            </div>
+            <footer class="p-6 border-t bg-slate-50 flex justify-end"><button onclick="closeEditor()" class="bg-slate-900 text-white px-10 py-4 rounded-xl font-black text-lg shadow-xl hover:translate-y-[-2px] transition-all">Enregistrer & Fermer</button></footer>
+        </div>
+    </div>`;
+}
 
 function render() {
   const root = document.getElementById('root');
   if(!root) return;
 
-  // 1. SI NON CONNECTÉ -> ÉCRAN LOGIN
   if(!state.currentUser) {
       root.innerHTML = renderLogin();
       if (window.lucide) window.lucide.createIcons();
@@ -778,84 +680,45 @@ function render() {
   const currentUser = getCurrentUser();
   const isAdmin = currentUser.role === 'admin';
 
-  // 2. ROUTEUR
   let content = '';
   switch(state.currentView) {
     case 'dashboard': content = renderDashboard(); break;
     case 'classroom': content = renderClassroom(); break;
-    
-    // Vues protégées (Admin Only)
     case 'admin': content = isAdmin ? renderAdmin() : renderDashboard(); break;
     case 'admin-students': content = isAdmin ? renderStudentManagement() : renderDashboard(); break;
-    
     case 'profile': content = renderProfile(); break;
     default: content = renderDashboard();
   }
 
-  // 3. LAYOUT PRINCIPAL
   root.innerHTML = `
     <div class="flex h-screen bg-slate-50">
-        <!-- Sidebar Navigation (Desktop) -->
         <nav class="w-24 bg-white border-r border-slate-200 flex flex-col items-center py-10 z-[50] hidden md:flex">
-            <div class="mb-16 w-14 h-14 bg-slate-900 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-slate-300">
-                <i data-lucide="music-4" class="w-7 h-7 text-orange-400"></i>
-            </div>
-            
+            <div class="mb-16 w-14 h-14 bg-slate-900 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-slate-300"><i data-lucide="music-4" class="w-7 h-7 text-orange-400"></i></div>
             <div class="flex-1 w-full space-y-8 flex flex-col items-center">
                 ${navButton('dashboard', 'layout-grid', 'Accueil')}
                 ${navButton('classroom', 'graduation-cap', 'Cours')}
                 ${navButton('profile', 'user', 'Compte')}
             </div>
-
-            <!-- SECTION ADMIN -->
             ${isAdmin ? `
                 <div class="w-full px-4 mb-4 pt-4 border-t border-slate-100 flex flex-col gap-4">
-                     <button onclick="setView('admin-students')" class="p-3 rounded-xl transition-all group relative ${state.currentView === 'admin-students' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-600'}" title="Mes Apprentis">
-                        <i data-lucide="users" class="w-6 h-6"></i>
-                        ${state.currentView !== 'admin-students' ? '<span class="absolute left-14 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Élèves</span>' : ''}
-                    </button>
-                    <button onclick="setView('admin')" class="p-3 rounded-xl transition-all group relative ${state.currentView === 'admin' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-600'}" title="Éditeur de contenu">
-                        <i data-lucide="edit" class="w-6 h-6"></i>
-                        ${state.currentView !== 'admin' ? '<span class="absolute left-14 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap">Contenu</span>' : ''}
-                    </button>
+                     <button onclick="setView('admin-students')" class="p-3 rounded-xl transition-all group relative ${state.currentView === 'admin-students' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-600'}" title="Mes Apprentis"><i data-lucide="users" class="w-6 h-6"></i></button>
+                    <button onclick="setView('admin')" class="p-3 rounded-xl transition-all group relative ${state.currentView === 'admin' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-600'}" title="Éditeur de contenu"><i data-lucide="edit" class="w-6 h-6"></i></button>
                 </div>
             ` : ''}
         </nav>
-
-        <!-- Navigation (Mobile) -->
         <nav class="md:hidden fixed bottom-0 w-full bg-white border-t p-4 flex justify-around z-50">
              ${navButtonMobile('dashboard', 'layout-grid')}
              ${navButtonMobile('classroom', 'graduation-cap')}
              ${isAdmin ? navButtonMobile('admin-students', 'users') : ''}
              ${navButtonMobile('profile', 'user')}
         </nav>
-
-        <!-- Main Content Area -->
-        <main class="flex-1 overflow-hidden relative selection:bg-orange-100 selection:text-orange-900">
-            ${content}
-        </main>
+        <main class="flex-1 overflow-hidden relative selection:bg-orange-100 selection:text-orange-900">${content}</main>
     </div>
   `;
-
   if (window.lucide) window.lucide.createIcons();
 }
 
-// Composants Navigation
-const navButton = (view, icon, label) => `
-    <button onclick="setView('${view}')" class="group flex flex-col items-center gap-1.5 w-full relative">
-        <div class="p-3 rounded-xl transition-all ${state.currentView === view ? 'bg-orange-50 text-orange-600' : 'text-slate-400 group-hover:text-slate-600'}">
-            <i data-lucide="${icon}" class="w-6 h-6 ${state.currentView === view ? 'stroke-[2.5px]' : ''}"></i>
-        </div>
-        <span class="text-[10px] font-black uppercase tracking-widest ${state.currentView === view ? 'text-orange-600' : 'text-slate-300 group-hover:text-slate-400'}">${label}</span>
-        ${state.currentView === view ? '<div class="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-orange-500 rounded-l-full"></div>' : ''}
-    </button>
-`;
+const navButton = (view, icon, label) => `<button onclick="setView('${view}')" class="group flex flex-col items-center gap-1.5 w-full relative"><div class="p-3 rounded-xl transition-all ${state.currentView === view ? 'bg-orange-50 text-orange-600' : 'text-slate-400 group-hover:text-slate-600'}"><i data-lucide="${icon}" class="w-6 h-6 ${state.currentView === view ? 'stroke-[2.5px]' : ''}"></i></div><span class="text-[10px] font-black uppercase tracking-widest ${state.currentView === view ? 'text-orange-600' : 'text-slate-300 group-hover:text-slate-400'}">${label}</span>${state.currentView === view ? '<div class="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-8 bg-orange-500 rounded-l-full"></div>' : ''}</button>`;
+const navButtonMobile = (view, icon) => `<button onclick="setView('${view}')" class="${state.currentView === view ? 'text-orange-600' : 'text-slate-400'}"><i data-lucide="${icon}"></i></button>`;
 
-const navButtonMobile = (view, icon) => `
-    <button onclick="setView('${view}')" class="${state.currentView === view ? 'text-orange-600' : 'text-slate-400'}">
-        <i data-lucide="${icon}"></i>
-    </button>
-`;
-
-// Lancement
 render();
