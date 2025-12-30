@@ -1,7 +1,7 @@
 
 /**
- * GIA V4.2 - PROGRESSION ENGINE
- * Feature: Per-User Unlocking Logic, Admin Validation Checkpoints
+ * GIA V4.3 - FLUID UI ENGINE
+ * Feature: App Shell Architecture, Partial Rendering, CSS Transitions
  */
 
 // --- CONFIGURATION PAR DÉFAUT ---
@@ -18,7 +18,7 @@ const DEFAULT_DB = {
       role: 'admin',
       avatar: "https://i.pravatar.cc/150?u=admin",
       progression: 100,
-      validatedLessons: [] // Admin a accès à tout par défaut
+      validatedLessons: [] 
     },
     {
       id: 2,
@@ -29,7 +29,7 @@ const DEFAULT_DB = {
       avatar: "https://i.pravatar.cc/150?u=jp",
       progression: 0,
       points: 0,
-      validatedLessons: [] // Liste des IDs de leçons validées par le prof
+      validatedLessons: [] 
     }
   ],
   modules: [
@@ -43,10 +43,10 @@ const DEFAULT_DB = {
           subtitle: "Les bases du confort", 
           duration: "10m", 
           type: 'video', 
-          status: 'active', // 'status' sert maintenant uniquement à dire si le contenu est "publié" ou "brouillon"
+          status: 'active',
           hasVideo: true, 
           wistiaId: '30q789',
-          validationRequired: false, // Pas de blocage ici
+          validationRequired: false,
           content: "Dans cette leçon, nous allons aborder la posture idéale...",
           files: []
         },
@@ -59,7 +59,7 @@ const DEFAULT_DB = {
             status: 'active', 
             hasVideo: false, 
             wistiaId: '',
-            validationRequired: true, // BLOQUANT : Il faut que le prof valide pour voir la suite
+            validationRequired: true,
             content: "Envoyez une vidéo de votre premier accord.",
             files: []
         },
@@ -86,28 +86,25 @@ const DEFAULT_DB = {
   editingLessonId: null,
 };
 
-// --- CORE ENGINE & MIGRATION ---
+// --- CORE ENGINE ---
 
 let savedState = null;
 try { savedState = JSON.parse(localStorage.getItem('gia_state')); } catch (e) {}
 
 let state;
 
-// Migration V4.2
+// Migration V4.2/4.3
 if (!savedState || !savedState.version || savedState.version < 4.2) {
-    console.log("--- MIGRATION V4.2 (Progression) ---");
+    console.log("--- MIGRATION V4.3 ---");
     const baseState = savedState || DEFAULT_DB;
-    
-    // On s'assure que tous les users ont un tableau validatedLessons
     const updatedUsers = (baseState.users || DEFAULT_DB.users).map(u => ({
         ...u,
         validatedLessons: u.validatedLessons || []
     }));
-
     state = {
-        ...DEFAULT_DB, // On prend la structure neuve pour les modules (pour la démo)
+        ...DEFAULT_DB,
         users: updatedUsers,
-        modules: DEFAULT_DB.modules // On écrase les modules pour la démo pour avoir la leçon 103
+        modules: DEFAULT_DB.modules
     };
     localStorage.setItem('gia_state', JSON.stringify(state));
 } else {
@@ -123,58 +120,29 @@ const getCurrentUser = () => {
     return state.users.find(u => u.id === state.currentUser);
 };
 
-
-// --- ENGINE DE PROGRESSION (LE COEUR DU SYSTEME) ---
-
-/**
- * Calcule quelles leçons sont accessibles pour un utilisateur donné.
- * Retourne un Set d'IDs accessibles.
- */
 const getAccessibleLessons = (user) => {
     const accessibleIds = new Set();
-    
-    // Si Admin, tout est ouvert
     if (user.role === 'admin') {
         state.modules.forEach(m => m.lessons.forEach(l => accessibleIds.add(l.id)));
         return accessibleIds;
     }
-
-    // Algorithme linéaire pour les élèves
     let isBlocked = false;
-
     for (const mod of state.modules) {
         for (const lesson of mod.lessons) {
-            
-            // Si le prof a marqué la leçon comme "Brouillon" (locked globalement), personne ne la voit
-            if (lesson.status === 'locked') {
-                // On n'ajoute pas l'ID, et on ne bloque pas forcément la suite, on la saute juste (ou on bloque, au choix. Ici on saute).
-                continue; 
-            }
-
+            if (lesson.status === 'locked') continue; 
             if (!isBlocked) {
-                // La leçon est accessible
                 accessibleIds.add(lesson.id);
-
-                // EST-CE UN POINT DE BLOCAGE ?
                 if (lesson.validationRequired) {
-                    // Est-ce que l'utilisateur a validé cette leçon ?
                     const hasValidated = user.validatedLessons && user.validatedLessons.includes(lesson.id);
-                    
-                    if (!hasValidated) {
-                        // NON : On s'arrête ICI.
-                        // L'utilisateur peut voir CETTE leçon (pour faire le devoir),
-                        // mais la boucle s'arrêtera pour les suivantes.
-                        isBlocked = true;
-                    }
+                    if (!hasValidated) isBlocked = true;
                 }
             }
         }
     }
-    
     return accessibleIds;
 };
 
-// --- AUTH & USER MANAGEMENT ---
+// --- AUTH ACTIONS ---
 
 window.login = (email, password) => {
     const user = state.users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
@@ -182,6 +150,7 @@ window.login = (email, password) => {
         state.currentUser = user.id;
         state.currentView = 'dashboard';
         saveState();
+        // Force full reload for login to establish Shell
         render();
     } else {
         alert("Identifiants incorrects.");
@@ -192,80 +161,102 @@ window.logout = () => {
     state.currentUser = null;
     state.currentView = 'login';
     saveState();
+    // Destroy Shell
+    document.getElementById('root').innerHTML = '';
     render();
 };
 
 window.createStudent = (name, email, password) => {
-    if(!name || !email || !password) return alert("Veuillez remplir tous les champs.");
-    if(state.users.find(u => u.email.toLowerCase() === email.toLowerCase())) return alert("Email pris.");
-
-    const newStudent = {
-        id: Date.now(),
-        name, email, password,
-        role: 'student',
-        avatar: `https://i.pravatar.cc/150?u=${Date.now()}`,
-        progression: 0,
-        points: 0,
-        validatedLessons: []
-    };
-    state.users.push(newStudent);
+    if(!name || !email || !password) return alert("Champs manquants");
+    if(state.users.find(u => u.email.toLowerCase() === email.toLowerCase())) return alert("Email pris");
+    state.users.push({
+        id: Date.now(), name, email, password, role: 'student', avatar: `https://i.pravatar.cc/150?u=${Date.now()}`,
+        progression: 0, points: 0, validatedLessons: []
+    });
     saveState();
     document.getElementById('add-student-modal').classList.add('hidden');
-    render(); 
+    render(); // Re-render content only
 };
 
 window.deleteUser = (id) => {
-    if(confirm("Supprimer cet élève ?")) {
-        state.users = state.users.filter(u => u.id !== id);
-        saveState();
-        render();
-    }
+    if(confirm("Supprimer ?")) { state.users = state.users.filter(u => u.id !== id); saveState(); render(); }
 };
-
-// --- ACTION DE VALIDATION FORMATEUR ---
 
 window.toggleStudentValidation = (studentId, lessonId, isValidated) => {
     const student = state.users.find(u => u.id === studentId);
     if (!student) return;
-
     if (!student.validatedLessons) student.validatedLessons = [];
-
     if (isValidated) {
-        // Ajouter la validation
         if (!student.validatedLessons.includes(lessonId)) {
             student.validatedLessons.push(lessonId);
-            // Ajout de points XP pour le fun
             student.points = (student.points || 0) + 50; 
-            // Recalcul progression (simpliste pour l'instant)
             student.progression = Math.min(100, student.progression + 5); 
         }
     } else {
-        // Retirer la validation
         student.validatedLessons = student.validatedLessons.filter(id => id !== lessonId);
         student.points = Math.max(0, (student.points || 0) - 50);
     }
-    
     saveState();
-    render(); // Rafraichir l'admin panel instantanément
+    render();
 };
 
-// --- ACTIONS GLOBALES ---
+// --- NAVIGATION & INTERACTION OPTIMISEES ---
 
-window.setView = (view) => { state.currentView = view; state.editingLessonId = null; state.isNotesOpen = false; saveState(); render(); };
-window.setActiveLesson = (id) => { state.activeLessonId = id; state.currentView = 'classroom'; saveState(); render(); };
-window.toggleNotes = () => { state.isNotesOpen = !state.isNotesOpen; saveState(); render(); };
+window.setView = (view) => { 
+    state.currentView = view; 
+    state.editingLessonId = null; 
+    state.isNotesOpen = false; 
+    saveState(); 
+    render(); // Partial render
+};
+
+window.setActiveLesson = (id) => { 
+    state.activeLessonId = id; 
+    // Si on est déjà en classroom, on reste, sinon on change
+    if (state.currentView !== 'classroom') {
+        state.currentView = 'classroom';
+    }
+    saveState(); 
+    render(); 
+};
+
+// OPTIMISATION: Manipulation DOM directe pour éviter le scintillement (surtout de la vidéo)
+window.toggleNotes = () => {
+  state.isNotesOpen = !state.isNotesOpen;
+  saveState();
+  
+  // Update DOM sans re-render
+  const drawer = document.getElementById('notes-drawer');
+  const backdrop = document.getElementById('notes-backdrop');
+  if(drawer && backdrop) {
+      if(state.isNotesOpen) {
+          drawer.classList.remove('translate-x-full');
+          drawer.classList.add('translate-x-0');
+          backdrop.classList.remove('hidden', 'opacity-0');
+      } else {
+          drawer.classList.remove('translate-x-0');
+          drawer.classList.add('translate-x-full');
+          backdrop.classList.add('opacity-0');
+          setTimeout(() => backdrop.classList.add('hidden'), 300);
+      }
+  } else {
+      render(); // Fallback
+  }
+};
+
 window.toggleModule = (id) => {
   if(state.expandedModules.includes(id)) state.expandedModules = state.expandedModules.filter(m => m !== id);
   else state.expandedModules.push(id);
-  saveState(); render();
+  saveState(); 
+  render(); // Necessite re-render sidebar
 };
 
-// --- ADMIN EDITOR ACTIONS ---
+// --- ADMIN EDITOR ---
 window.updateLessonTitle = (id, value) => { const l = findLesson(id); if(l) { l.title = value; saveState(); } };
 window.updateLessonContent = (id, value) => { const l = findLesson(id); if(l) { l.content = value; saveState(); } };
 window.updateLessonWistia = (id, value) => { const l = findLesson(id); if(l) { l.wistiaId = value; saveState(); } };
 window.updateChapterTitle = (id, value) => { const m = state.modules.find(m => m.id === id); if(m) { m.title = value; saveState(); } };
-window.toggleLessonLock = (id, isChecked) => { const l = findLesson(id); if(l) { l.status = isChecked ? 'locked' : 'active'; saveState(); render(); } }; // Bloquage global (Brouillon)
+window.toggleLessonLock = (id, isChecked) => { const l = findLesson(id); if(l) { l.status = isChecked ? 'locked' : 'active'; saveState(); render(); } }; 
 window.toggleLessonValidation = (id, isChecked) => { const l = findLesson(id); if(l) { l.validationRequired = isChecked; saveState(); render(); } };
 
 window.addChapter = () => { state.modules.push({ id: Date.now(), title: "Nouveau Chapitre", lessons: [] }); saveState(); render(); };
@@ -280,6 +271,7 @@ const findLesson = (id) => state.modules.flatMap(m => m.lessons).find(l => l.id 
 
 // --- VUES ---
 
+// La vue Login reste "Stand-alone"
 function renderLogin() {
     return `
     <div class="min-h-screen bg-slate-900 flex items-center justify-center p-4 fade-in relative overflow-hidden">
@@ -305,90 +297,75 @@ function renderLogin() {
     </div>`;
 }
 
+// Shell Structure (Layout Fixe)
+function renderShell(user, content, isAdmin) {
+    return `
+    <div id="app-shell" class="flex h-screen bg-slate-50">
+        <!-- Sidebar Fixe Desktop -->
+        <nav class="w-24 bg-white border-r border-slate-200 flex flex-col items-center py-10 z-[50] hidden md:flex transition-none">
+            <div class="mb-16 w-14 h-14 bg-slate-900 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-slate-300">
+                <i data-lucide="music-4" class="w-7 h-7 text-orange-400"></i>
+            </div>
+            <div id="desktop-menu-items" class="flex-1 w-full space-y-8 flex flex-col items-center">
+                <!-- Rempli dynamiquement pour gérer les états actifs -->
+            </div>
+            ${isAdmin ? `
+                <div id="admin-menu-items" class="w-full px-4 mb-4 pt-4 border-t border-slate-100 flex flex-col gap-4">
+                     <!-- Admin items -->
+                </div>
+            ` : ''}
+        </nav>
+
+        <!-- Navbar Fixe Mobile -->
+        <nav id="mobile-nav" class="md:hidden fixed bottom-0 w-full bg-white border-t p-4 flex justify-around z-50">
+             <!-- Mobile items -->
+        </nav>
+
+        <!-- Container Contenu Dynamique -->
+        <main id="main-content" class="flex-1 overflow-hidden relative selection:bg-orange-100 selection:text-orange-900">
+            ${content}
+        </main>
+    </div>
+    `;
+}
+
+// --- CONTENU DES VUES ---
+
 function renderStudentManagement() {
     const students = state.users.filter(u => u.role === 'student');
-    // Récupérer toutes les leçons qui nécessitent une validation pour créer la liste des checkpoints
     const checkpoints = state.modules.flatMap(m => m.lessons.filter(l => l.validationRequired));
 
     return `
     <div class="h-full bg-admin-grid p-8 lg:p-12 overflow-y-auto fade-in">
         <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 max-w-6xl mx-auto gap-6">
-            <div>
-                <h1 class="text-4xl font-black text-slate-900 mb-2">Mes Apprentis</h1>
-                <p class="text-slate-500 font-bold uppercase tracking-widest">Suivez et validez la progression</p>
-            </div>
+            <div><h1 class="text-4xl font-black text-slate-900 mb-2">Mes Apprentis</h1><p class="text-slate-500 font-bold uppercase tracking-widest">Suivez et validez la progression</p></div>
             <button onclick="document.getElementById('add-student-modal').classList.remove('hidden')" class="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-lg hover:scale-105 transition-all"><i data-lucide="user-plus" class="w-5 h-5"></i> Ajouter un élève</button>
         </header>
-
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 max-w-6xl mx-auto">
             ${students.map(student => {
-                // Trouver le prochain blocage
                 const studentValidated = student.validatedLessons || [];
                 const nextCheckpoint = checkpoints.find(c => !studentValidated.includes(c.id));
-                
                 return `
                 <div class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-xl flex flex-col h-full">
                     <div class="flex items-center justify-between mb-6">
-                        <div class="flex items-center gap-4">
-                            <img src="${student.avatar}" class="w-14 h-14 rounded-2xl border-2 border-slate-50" />
-                            <div class="min-w-0">
-                                <h3 class="text-lg font-black text-slate-900 truncate">${student.name}</h3>
-                                <p class="text-xs text-slate-400 font-bold truncate">${student.email}</p>
-                            </div>
-                        </div>
+                        <div class="flex items-center gap-4"><img src="${student.avatar}" class="w-14 h-14 rounded-2xl border-2 border-slate-50" /><div class="min-w-0"><h3 class="text-lg font-black text-slate-900 truncate">${student.name}</h3><p class="text-xs text-slate-400 font-bold truncate">${student.email}</p></div></div>
                         <button onclick="deleteUser(${student.id})" class="text-slate-300 hover:text-red-500"><i data-lucide="trash-2" class="w-5 h-5"></i></button>
                     </div>
-                    
-                    <!-- Progress Bar -->
-                    <div class="mb-6">
-                        <div class="flex justify-between text-xs font-bold uppercase text-slate-400 mb-1">
-                            <span>Progression</span><span>${student.progression}%</span>
-                        </div>
-                        <div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                            <div class="bg-indigo-500 h-full rounded-full" style="width: ${student.progression}%"></div>
-                        </div>
-                    </div>
-
-                    <!-- Checkpoints Section -->
+                    <div class="mb-6"><div class="flex justify-between text-xs font-bold uppercase text-slate-400 mb-1"><span>Progression</span><span>${student.progression}%</span></div><div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden"><div class="bg-indigo-500 h-full rounded-full" style="width: ${student.progression}%"></div></div></div>
                     <div class="bg-slate-50 rounded-xl p-4 flex-1 border border-slate-100">
-                        <h4 class="text-xs font-black uppercase text-slate-400 mb-3 tracking-widest flex items-center gap-2">
-                            <i data-lucide="flag" class="w-3 h-3"></i> Checkpoints
-                        </h4>
+                        <h4 class="text-xs font-black uppercase text-slate-400 mb-3 tracking-widest flex items-center gap-2"><i data-lucide="flag" class="w-3 h-3"></i> Checkpoints</h4>
                         <div class="space-y-2">
                             ${checkpoints.map(cp => {
                                 const isDone = studentValidated.includes(cp.id);
-                                return `
-                                <div class="flex items-center justify-between p-2 rounded-lg ${isDone ? 'bg-emerald-50 border border-emerald-100' : 'bg-white border border-slate-200'}">
-                                    <span class="text-xs font-bold ${isDone ? 'text-emerald-700' : 'text-slate-600'} truncate mr-2">${cp.title}</span>
-                                    <label class="switch scale-75 origin-right">
-                                        <input type="checkbox" ${isDone ? 'checked' : ''} onchange="toggleStudentValidation(${student.id}, ${cp.id}, this.checked)">
-                                        <span class="slider"></span>
-                                    </label>
-                                </div>
-                                `;
+                                return `<div class="flex items-center justify-between p-2 rounded-lg ${isDone ? 'bg-emerald-50 border border-emerald-100' : 'bg-white border border-slate-200'}"><span class="text-xs font-bold ${isDone ? 'text-emerald-700' : 'text-slate-600'} truncate mr-2">${cp.title}</span><label class="switch scale-75 origin-right"><input type="checkbox" ${isDone ? 'checked' : ''} onchange="toggleStudentValidation(${student.id}, ${cp.id}, this.checked)"><span class="slider"></span></label></div>`;
                             }).join('')}
                             ${checkpoints.length === 0 ? '<p class="text-xs text-slate-400 italic">Aucun checkpoint défini.</p>' : ''}
                         </div>
                     </div>
-
-                    ${nextCheckpoint ? `
-                        <div class="mt-4 p-3 bg-orange-50 rounded-xl border border-orange-100 flex items-center gap-3">
-                            <div class="bg-orange-100 p-2 rounded-lg text-orange-600"><i data-lucide="lock" class="w-4 h-4"></i></div>
-                            <div>
-                                <p class="text-[10px] uppercase font-bold text-orange-400">Actuellement bloqué à</p>
-                                <p class="text-xs font-bold text-slate-800 line-clamp-1">${nextCheckpoint.title}</p>
-                            </div>
-                        </div>
-                    ` : `
-                        <div class="mt-4 p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-center">
-                            <p class="text-xs font-bold text-emerald-600">Tout est validé ! 🎉</p>
-                        </div>
-                    `}
+                    ${nextCheckpoint ? `<div class="mt-4 p-3 bg-orange-50 rounded-xl border border-orange-100 flex items-center gap-3"><div class="bg-orange-100 p-2 rounded-lg text-orange-600"><i data-lucide="lock" class="w-4 h-4"></i></div><div><p class="text-[10px] uppercase font-bold text-orange-400">Actuellement bloqué à</p><p class="text-xs font-bold text-slate-800 line-clamp-1">${nextCheckpoint.title}</p></div></div>` : `<div class="mt-4 p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-center"><p class="text-xs font-bold text-emerald-600">Tout est validé ! 🎉</p></div>`}
                 </div>
             `;}).join('')}
         </div>
-        
-        <!-- Add Student Modal (Same as before) -->
         <div id="add-student-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4">
             <div class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onclick="this.parentElement.classList.add('hidden')"></div>
             <div class="bg-white w-full max-w-md rounded-[2rem] p-8 relative z-10 shadow-2xl">
@@ -410,17 +387,14 @@ function renderClassroom() {
   
   const currentUser = getCurrentUser();
   const isAdmin = currentUser.role === 'admin';
-  
-  // CALCUL DES ACCÈS
   const accessibleLessons = getAccessibleLessons(currentUser);
 
+  // La structure du drawer est présente mais cachée/translatée
   return `
-    <div class="flex h-full bg-slate-900">
-        <!-- Sidebar -->
+    <div class="flex h-full bg-slate-900 fade-in">
+        <!-- Sidebar Programme -->
         <aside class="w-[340px] bg-slate-950 border-r border-white/5 flex flex-col hidden lg:flex">
-            <div class="p-8 border-b border-white/10">
-                <h2 class="text-orange-500 font-black uppercase tracking-[0.3em] text-xs">Programme</h2>
-            </div>
+            <div class="p-8 border-b border-white/10"><h2 class="text-orange-500 font-black uppercase tracking-[0.3em] text-xs">Programme</h2></div>
             <div class="flex-1 overflow-y-auto custom-scrollbar p-3">
                 ${state.modules.map(mod => `
                     <div class="mb-6">
@@ -431,22 +405,17 @@ function renderClassroom() {
                         ${state.expandedModules.includes(mod.id) ? `
                             <div class="space-y-1 mt-1">
                                 ${mod.lessons.map(l => {
-                                    // LOGIQUE DE VERROUILLAGE DYNAMIQUE
                                     const isAccessible = accessibleLessons.has(l.id);
                                     const isActive = l.id === state.activeLessonId;
                                     const isLocked = !isAccessible;
-                                    
-                                    // Status pour affichage
                                     let icon = isLocked ? 'lock' : (isActive ? 'play' : 'circle');
-                                    if (l.validationRequired) icon = 'flag'; // Icone spéciale pour les checkpoints
-                                    if (l.validationRequired && currentUser.validatedLessons?.includes(l.id)) icon = 'check-circle'; // Validé
+                                    if (l.validationRequired) icon = 'flag';
+                                    if (l.validationRequired && currentUser.validatedLessons?.includes(l.id)) icon = 'check-circle';
 
                                     return `
                                         <div onclick="${isLocked ? '' : `setActiveLesson(${l.id})`}" class="p-4 rounded-xl flex items-center gap-4 transition-all ${isActive ? 'bg-orange-600 text-white shadow-lg shadow-orange-900/50' : 'hover:bg-white/5 text-slate-500'} ${isLocked ? 'opacity-40 cursor-not-allowed bg-slate-900/50' : 'cursor-pointer'}">
                                             <i data-lucide="${icon}" class="w-4 h-4 ${isActive ? 'fill-current' : ''} flex-shrink-0 ${l.validationRequired && !isLocked && !currentUser.validatedLessons?.includes(l.id) ? 'text-orange-400 animate-pulse' : ''}"></i>
-                                            <div class="flex-1 min-w-0">
-                                                <span class="text-sm font-bold leading-tight block truncate">${l.title}</span>
-                                            </div>
+                                            <div class="flex-1 min-w-0"><span class="text-sm font-bold leading-tight block truncate">${l.title}</span></div>
                                             ${l.validationRequired ? '<span title="Validation requise" class="text-sm filter drop-shadow-sm">🎯</span>' : ''}
                                         </div>
                                     `;
@@ -465,79 +434,50 @@ function renderClassroom() {
                     <div class="w-full max-w-5xl">
                        <div class="aspect-video video-frame mb-8 shadow-2xl">
                             ${currentLesson.wistiaId ? `
-                                <iframe src="https://fast.wistia.net/embed/iframe/${currentLesson.wistiaId}?videoFoam=true" 
-                                        title="Wistia video player" allowtransparency="true" frameborder="0" scrolling="no" class="wistia_embed" 
-                                        name="wistia_embed" allowfullscreen width="100%" height="100%"></iframe>
+                                <iframe src="https://fast.wistia.net/embed/iframe/${currentLesson.wistiaId}?videoFoam=true" title="Wistia video player" allowtransparency="true" frameborder="0" scrolling="no" class="wistia_embed" name="wistia_embed" allowfullscreen width="100%" height="100%"></iframe>
                             ` : `
-                                <div class="w-full h-full bg-slate-800 flex flex-col items-center justify-center text-slate-500">
-                                    <i data-lucide="video-off" class="w-16 h-16 mb-4 opacity-20"></i>
-                                    <span class="text-xs font-black uppercase tracking-widest">Contenu vidéo non disponible</span>
-                                </div>
+                                <div class="w-full h-full bg-slate-800 flex flex-col items-center justify-center text-slate-500"><i data-lucide="video-off" class="w-16 h-16 mb-4 opacity-20"></i><span class="text-xs font-black uppercase tracking-widest">Contenu vidéo non disponible</span></div>
                             `}
                        </div>
                        
                        <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 text-white pb-10">
                            <div>
-                               <div class="flex items-center gap-3 mb-2">
-                                   <h1 class="text-3xl font-black">${currentLesson.title}</h1>
-                                   ${currentLesson.validationRequired ? '<span title="Validation requise" class="text-2xl filter drop-shadow-md">🎯</span>' : ''}
-                               </div>
+                               <div class="flex items-center gap-3 mb-2"><h1 class="text-3xl font-black">${currentLesson.title}</h1>${currentLesson.validationRequired ? '<span title="Validation requise" class="text-2xl filter drop-shadow-md">🎯</span>' : ''}</div>
                                <p class="text-slate-400 text-lg">${currentLesson.subtitle}</p>
                            </div>
                            <div class="flex items-center gap-4">
-                               <button onclick="toggleNotes()" class="bg-white/10 hover:bg-white/20 border border-white/10 px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all">
-                                   <i data-lucide="book" class="w-5 h-5"></i> Notes
-                               </button>
-                               
+                               <button onclick="toggleNotes()" class="bg-white/10 hover:bg-white/20 border border-white/10 px-6 py-3 rounded-xl font-bold flex items-center gap-2 transition-all"><i data-lucide="book" class="w-5 h-5"></i> Notes</button>
                                ${currentLesson.validationRequired ? `
                                    ${currentUser.validatedLessons?.includes(currentLesson.id) ? 
                                    `<div class="px-8 py-3 rounded-xl font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 flex items-center gap-2"><i data-lucide="check-circle" class="w-5 h-5"></i> Validé</div>` 
                                    : 
-                                   `<button onclick="window.open('https://wa.me/?text=Bonjour,%20je%20souhaite%20valider%20la%20leçon%20${encodeURIComponent(currentLesson.title)}', '_blank')" class="bg-emerald-500 hover:bg-emerald-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-emerald-900/20 transition-all flex items-center gap-2 hover:scale-105">
-                                       <i data-lucide="message-circle" class="w-5 h-5"></i> Valider par WhatsApp
-                                   </button>`}
-                               ` : `
-                                   <!-- Bouton Suivant Standard (logique à affiner pour auto-next, ici simple placeholder) -->
-                                   <button class="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-orange-900/20 transition-all">
-                                       SUIVANT
-                                   </button>
-                               `}
+                                   `<button onclick="window.open('https://wa.me/?text=Bonjour,%20je%20souhaite%20valider%20la%20leçon%20${encodeURIComponent(currentLesson.title)}', '_blank')" class="bg-emerald-500 hover:bg-emerald-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-emerald-900/20 transition-all flex items-center gap-2 hover:scale-105"><i data-lucide="message-circle" class="w-5 h-5"></i> Valider par WhatsApp</button>`}
+                               ` : `<button class="bg-orange-500 hover:bg-orange-600 text-white px-8 py-3 rounded-xl font-black shadow-lg shadow-orange-900/20 transition-all">SUIVANT</button>`}
                            </div>
                        </div>
                     </div>
                 </div>
             </div>
             
-            <!-- Notes Drawer -->
-            <div class="fixed inset-y-0 right-0 w-full md:w-[500px] bg-white shadow-2xl z-[80] transform transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${state.isNotesOpen ? 'translate-x-0' : 'translate-x-full'} flex flex-col">
+            <!-- Notes Drawer (Persistent) -->
+            <div id="notes-drawer" class="fixed inset-y-0 right-0 w-full md:w-[500px] bg-white shadow-2xl z-[80] transform transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${state.isNotesOpen ? 'translate-x-0' : 'translate-x-full'} flex flex-col">
                 <div class="p-6 border-b flex justify-between items-center bg-slate-50">
                     <h3 class="text-xl font-black text-slate-900 flex items-center gap-2"><i data-lucide="book-open" class="text-orange-500"></i> Notes de cours</h3>
                     <button onclick="toggleNotes()" class="p-2 hover:bg-slate-200 rounded-full text-slate-400 hover:text-slate-900 transition-colors"><i data-lucide="x" class="w-6 h-6"></i></button>
                 </div>
                 <div class="flex-1 overflow-y-auto p-8 prose prose-slate max-w-none">
-                    <h2 class="text-3xl font-black mb-6 flex items-center gap-3">
-                        ${currentLesson.title}
-                        ${currentLesson.validationRequired ? '🎯' : ''}
-                    </h2>
+                    <h2 class="text-3xl font-black mb-6 flex items-center gap-3">${currentLesson.title} ${currentLesson.validationRequired ? '🎯' : ''}</h2>
                     <div class="text-lg text-slate-600 leading-relaxed whitespace-pre-wrap mb-10">${currentLesson.content || "Aucune note disponible."}</div>
-                    ${currentLesson.files.length > 0 ? `
-                        <div class="bg-slate-50 p-6 rounded-2xl border border-slate-100 not-prose">
-                            <h4 class="text-xs font-black uppercase text-slate-400 mb-4 tracking-widest">Téléchargements</h4>
-                            <div class="space-y-3">
-                                ${currentLesson.files.map(f => `<a href="#" class="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl hover:border-indigo-500 hover:shadow-md transition-all group"><div class="flex items-center gap-3"><i data-lucide="file-text" class="w-5 h-5 text-slate-400 group-hover:text-indigo-500 transition-colors"></i><span class="font-bold text-slate-700">${f.name}</span></div><i data-lucide="download-cloud" class="w-5 h-5 text-slate-300"></i></a>`).join('')}
-                            </div>
-                        </div>
-                    ` : ''}
+                    ${currentLesson.files.length > 0 ? `<div class="bg-slate-50 p-6 rounded-2xl border border-slate-100 not-prose"><h4 class="text-xs font-black uppercase text-slate-400 mb-4 tracking-widest">Téléchargements</h4><div class="space-y-3">${currentLesson.files.map(f => `<a href="#" class="flex items-center justify-between p-4 bg-white border border-slate-200 rounded-xl hover:border-indigo-500 hover:shadow-md transition-all group"><div class="flex items-center gap-3"><i data-lucide="file-text" class="w-5 h-5 text-slate-400 group-hover:text-indigo-500 transition-colors"></i><span class="font-bold text-slate-700">${f.name}</span></div><i data-lucide="download-cloud" class="w-5 h-5 text-slate-300"></i></a>`).join('')}</div></div>` : ''}
                 </div>
             </div>
-            ${state.isNotesOpen ? `<div onclick="toggleNotes()" class="fixed inset-0 bg-black/60 backdrop-blur-[2px] z-[70] fade-in"></div>` : ''}
+            
+            <!-- Backdrop -->
+            <div id="notes-backdrop" onclick="toggleNotes()" class="fixed inset-0 bg-black/60 backdrop-blur-[2px] z-[70] transition-opacity duration-300 ${state.isNotesOpen ? '' : 'hidden opacity-0'}"></div>
         </div>
     </div>
   `;
 }
-
-// Les autres vues (Dashboard, Admin, Profile, LessonEditor) restent inchangées ou utilisent les fonctions globales.
-// Je réintègre les fonctions inchangées pour garder le fichier complet et fonctionnel.
 
 function renderDashboard() {
   const user = getCurrentUser();
@@ -614,6 +554,7 @@ function renderAdmin() {
     </div>`;
 }
 
+// L'éditeur reste inchangé
 function renderLessonEditor() {
   const lesson = findLesson(state.editingLessonId);
   if (!lesson) return '';
@@ -667,6 +608,41 @@ function renderLessonEditor() {
     </div>`;
 }
 
+
+// --- FLUID RENDER LOGIC ---
+
+function updateNavState() {
+    // Reconstruit seulement les boutons du menu dans les conteneurs existants
+    const desktopContainer = document.getElementById('desktop-menu-items');
+    const adminContainer = document.getElementById('admin-menu-items');
+    const mobileContainer = document.getElementById('mobile-nav');
+    const isAdmin = getCurrentUser().role === 'admin';
+
+    if (desktopContainer) {
+        desktopContainer.innerHTML = `
+            ${navButton('dashboard', 'layout-grid', 'Accueil')}
+            ${navButton('classroom', 'graduation-cap', 'Cours')}
+            ${navButton('profile', 'user', 'Compte')}
+        `;
+    }
+    
+    if (adminContainer && isAdmin) {
+        adminContainer.innerHTML = `
+            <button onclick="setView('admin-students')" class="p-3 rounded-xl transition-all group relative ${state.currentView === 'admin-students' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-600'}" title="Mes Apprentis"><i data-lucide="users" class="w-6 h-6"></i></button>
+            <button onclick="setView('admin')" class="p-3 rounded-xl transition-all group relative ${state.currentView === 'admin' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-600'}" title="Éditeur de contenu"><i data-lucide="edit" class="w-6 h-6"></i></button>
+        `;
+    }
+
+    if (mobileContainer) {
+        mobileContainer.innerHTML = `
+             ${navButtonMobile('dashboard', 'layout-grid')}
+             ${navButtonMobile('classroom', 'graduation-cap')}
+             ${isAdmin ? navButtonMobile('admin-students', 'users') : ''}
+             ${navButtonMobile('profile', 'user')}
+        `;
+    }
+}
+
 function render() {
   const root = document.getElementById('root');
   if(!root) return;
@@ -690,31 +666,29 @@ function render() {
     default: content = renderDashboard();
   }
 
-  root.innerHTML = `
-    <div class="flex h-screen bg-slate-50">
-        <nav class="w-24 bg-white border-r border-slate-200 flex flex-col items-center py-10 z-[50] hidden md:flex">
-            <div class="mb-16 w-14 h-14 bg-slate-900 text-white rounded-2xl flex items-center justify-center shadow-lg shadow-slate-300"><i data-lucide="music-4" class="w-7 h-7 text-orange-400"></i></div>
-            <div class="flex-1 w-full space-y-8 flex flex-col items-center">
-                ${navButton('dashboard', 'layout-grid', 'Accueil')}
-                ${navButton('classroom', 'graduation-cap', 'Cours')}
-                ${navButton('profile', 'user', 'Compte')}
-            </div>
-            ${isAdmin ? `
-                <div class="w-full px-4 mb-4 pt-4 border-t border-slate-100 flex flex-col gap-4">
-                     <button onclick="setView('admin-students')" class="p-3 rounded-xl transition-all group relative ${state.currentView === 'admin-students' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-600'}" title="Mes Apprentis"><i data-lucide="users" class="w-6 h-6"></i></button>
-                    <button onclick="setView('admin')" class="p-3 rounded-xl transition-all group relative ${state.currentView === 'admin' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-300 hover:bg-slate-50 hover:text-slate-600'}" title="Éditeur de contenu"><i data-lucide="edit" class="w-6 h-6"></i></button>
-                </div>
-            ` : ''}
-        </nav>
-        <nav class="md:hidden fixed bottom-0 w-full bg-white border-t p-4 flex justify-around z-50">
-             ${navButtonMobile('dashboard', 'layout-grid')}
-             ${navButtonMobile('classroom', 'graduation-cap')}
-             ${isAdmin ? navButtonMobile('admin-students', 'users') : ''}
-             ${navButtonMobile('profile', 'user')}
-        </nav>
-        <main class="flex-1 overflow-hidden relative selection:bg-orange-100 selection:text-orange-900">${content}</main>
-    </div>
-  `;
+  // APP SHELL PATTERN
+  // Si le shell n'existe pas, on le crée.
+  if (!document.getElementById('app-shell')) {
+      root.innerHTML = renderShell(currentUser, content, isAdmin);
+      updateNavState(); // Initial population
+  } else {
+      // Si le shell existe, on met à jour uniquement les parties dynamiques
+      updateNavState();
+      document.getElementById('main-content').innerHTML = content;
+  }
+  
+  // Overlay si éditeur ouvert (se rajoute par dessus le shell)
+  if(state.editingLessonId) {
+      const editor = document.createElement('div');
+      editor.innerHTML = renderLessonEditor();
+      // On s'assure qu'on ne duplique pas
+      const existingEditor = document.querySelector('.fixed.inset-0.z-\\[100\\]');
+      if(!existingEditor) document.body.appendChild(editor.firstElementChild);
+  } else {
+       const existingEditor = document.querySelector('.fixed.inset-0.z-\\[100\\]');
+       if(existingEditor) existingEditor.remove();
+  }
+
   if (window.lucide) window.lucide.createIcons();
 }
 
