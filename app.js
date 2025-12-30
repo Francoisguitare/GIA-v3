@@ -1,13 +1,13 @@
 
 /**
- * GIA V4.4 - UX PERFECTION
- * Feature: Partial DOM Updates, No-Scroll Layout, Dynamic Dashboard
+ * GIA V4.5 - DATA DASHBOARD & TIMELINE
+ * Feature: Progress Gauge, Velocity Speedometer, History Log, Estimated Dates
  */
 
 // --- CONFIGURATION PAR DÉFAUT ---
 
 const DEFAULT_DB = {
-  version: 4.2, 
+  version: 4.5, 
   currentUser: null, 
   users: [
     {
@@ -18,7 +18,9 @@ const DEFAULT_DB = {
       role: 'admin',
       avatar: "https://i.pravatar.cc/150?u=admin",
       progression: 100,
-      validatedLessons: [] 
+      validatedLessons: [],
+      startDate: "2023-01-01",
+      history: []
     },
     {
       id: 2,
@@ -29,13 +31,16 @@ const DEFAULT_DB = {
       avatar: "https://i.pravatar.cc/150?u=jp",
       progression: 0,
       points: 0,
-      validatedLessons: [] 
+      validatedLessons: [],
+      startDate: new Date().toISOString().split('T')[0], // Aujourd'hui par défaut
+      history: [] // Log des validations {lessonId, date}
     }
   ],
   modules: [
     {
       id: 1,
       title: "CHAPITRE 1 : Les Fondamentaux",
+      estimatedWeeks: 2, // Durée estimée en semaines
       lessons: [
         { 
           id: 101, 
@@ -93,17 +98,26 @@ try { savedState = JSON.parse(localStorage.getItem('gia_state')); } catch (e) {}
 
 let state;
 
-// Migration V4.2/4.3
-if (!savedState || !savedState.version || savedState.version < 4.2) {
+// Migration V4.5
+if (!savedState || !savedState.version || savedState.version < 4.5) {
     const baseState = savedState || DEFAULT_DB;
+    // Mise à jour des users pour inclure l'historique et la date de début
     const updatedUsers = (baseState.users || DEFAULT_DB.users).map(u => ({
         ...u,
-        validatedLessons: u.validatedLessons || []
+        validatedLessons: u.validatedLessons || [],
+        startDate: u.startDate || new Date().toISOString().split('T')[0],
+        history: u.history || []
     }));
+    // Mise à jour des modules pour inclure estimatedWeeks
+    const updatedModules = (baseState.modules || DEFAULT_DB.modules).map(m => ({
+        ...m,
+        estimatedWeeks: m.estimatedWeeks || 2
+    }));
+
     state = {
         ...DEFAULT_DB,
         users: updatedUsers,
-        modules: DEFAULT_DB.modules
+        modules: updatedModules
     };
     localStorage.setItem('gia_state', JSON.stringify(state));
 } else {
@@ -168,7 +182,7 @@ window.createStudent = (name, email, password) => {
     if(state.users.find(u => u.email.toLowerCase() === email.toLowerCase())) return alert("Email pris");
     state.users.push({
         id: Date.now(), name, email, password, role: 'student', avatar: `https://i.pravatar.cc/150?u=${Date.now()}`,
-        progression: 0, points: 0, validatedLessons: []
+        progression: 0, points: 0, validatedLessons: [], startDate: new Date().toISOString().split('T')[0], history: []
     });
     saveState();
     document.getElementById('add-student-modal').classList.add('hidden');
@@ -183,15 +197,32 @@ window.toggleStudentValidation = (studentId, lessonId, isValidated) => {
     const student = state.users.find(u => u.id === studentId);
     if (!student) return;
     if (!student.validatedLessons) student.validatedLessons = [];
+    if (!student.history) student.history = [];
+
     if (isValidated) {
         if (!student.validatedLessons.includes(lessonId)) {
             student.validatedLessons.push(lessonId);
+            // Ajout à l'historique avec la date du jour
+            student.history.push({
+                lessonId: lessonId,
+                date: new Date().toISOString()
+            });
             student.points = (student.points || 0) + 50; 
-            student.progression = Math.min(100, student.progression + 5); 
+            // Recalcul progression (simpliste: % des checkpoints validés sur total checkpoints)
+            const totalCheckpoints = state.modules.flatMap(m => m.lessons.filter(l => l.validationRequired)).length;
+            const validCount = student.validatedLessons.length;
+            student.progression = totalCheckpoints > 0 ? Math.round((validCount / totalCheckpoints) * 100) : 0;
         }
     } else {
         student.validatedLessons = student.validatedLessons.filter(id => id !== lessonId);
+        // Retirer de l'historique
+        student.history = student.history.filter(h => h.lessonId !== lessonId);
         student.points = Math.max(0, (student.points || 0) - 50);
+        
+        // Recalcul progression
+        const totalCheckpoints = state.modules.flatMap(m => m.lessons.filter(l => l.validationRequired)).length;
+        const validCount = student.validatedLessons.length;
+        student.progression = totalCheckpoints > 0 ? Math.round((validCount / totalCheckpoints) * 100) : 0;
     }
     saveState();
     render();
@@ -235,20 +266,17 @@ window.toggleNotes = () => {
   }
 };
 
-// --- OPTIMISATION FLUIDITÉ SIDEBAR ---
-// Cette fonction ne recharge PAS toute la page, elle met juste à jour le HTML de la liste
 window.toggleModule = (id) => {
   if(state.expandedModules.includes(id)) state.expandedModules = state.expandedModules.filter(m => m !== id);
   else state.expandedModules.push(id);
   saveState();
   
-  // Update CIBLÉ du DOM sans re-render complet
   const sidebarContent = document.getElementById('classroom-sidebar-content');
   if(sidebarContent) {
       sidebarContent.innerHTML = renderModuleListItems();
       if (window.lucide) window.lucide.createIcons();
   } else {
-      render(); // Fallback si pas en vue classroom
+      render(); 
   }
 };
 
@@ -257,10 +285,11 @@ window.updateLessonTitle = (id, value) => { const l = findLesson(id); if(l) { l.
 window.updateLessonContent = (id, value) => { const l = findLesson(id); if(l) { l.content = value; saveState(); } };
 window.updateLessonWistia = (id, value) => { const l = findLesson(id); if(l) { l.wistiaId = value; saveState(); } };
 window.updateChapterTitle = (id, value) => { const m = state.modules.find(m => m.id === id); if(m) { m.title = value; saveState(); } };
+window.updateChapterDuration = (id, value) => { const m = state.modules.find(m => m.id === id); if(m) { m.estimatedWeeks = parseInt(value) || 0; saveState(); } };
 window.toggleLessonLock = (id, isChecked) => { const l = findLesson(id); if(l) { l.status = isChecked ? 'locked' : 'active'; saveState(); render(); } }; 
 window.toggleLessonValidation = (id, isChecked) => { const l = findLesson(id); if(l) { l.validationRequired = isChecked; saveState(); render(); } };
 
-window.addChapter = () => { state.modules.push({ id: Date.now(), title: "Nouveau Chapitre", lessons: [] }); saveState(); render(); };
+window.addChapter = () => { state.modules.push({ id: Date.now(), title: "Nouveau Chapitre", estimatedWeeks: 2, lessons: [] }); saveState(); render(); };
 window.deleteChapter = (id) => { if(confirm("Supprimer ?")) { state.modules = state.modules.filter(m => m.id !== id); saveState(); render(); } };
 window.addLesson = (cId) => { const m = state.modules.find(mod => mod.id === cId); if(m) { m.lessons.push({ id: Date.now(), title: "Leçon", subtitle: "...", duration: "5m", type: 'video', status: 'locked', hasVideo: true, wistiaId: '', validationRequired: false, content: '', files: [] }); saveState(); render(); } };
 window.addFile = (lId) => { const n = prompt("Nom:"); if(n) { const l = findLesson(lId); if(l) { l.files.push({name:n, url:'#'}); saveState(); render(); } } };
@@ -297,7 +326,6 @@ function renderLogin() {
     </div>`;
 }
 
-// Shell Structure (Layout Fixe)
 function renderShell(user, content, isAdmin) {
     return `
     <div id="app-shell" class="flex h-screen bg-slate-50">
@@ -316,7 +344,6 @@ function renderShell(user, content, isAdmin) {
     `;
 }
 
-// --- HELPER RENDU LISTE MODULES (Pour Sidebar) ---
 function renderModuleListItems() {
     const currentUser = getCurrentUser();
     const isAdmin = currentUser.role === 'admin';
@@ -356,14 +383,10 @@ function renderModuleListItems() {
 function renderClassroom() {
   const currentLesson = findLesson(state.activeLessonId);
   if(!currentLesson) { state.activeLessonId = state.modules[0]?.lessons[0]?.id; render(); return ''; }
-  
   const currentUser = getCurrentUser();
   
-  // -- LAYOUT NO-SCROLL --
-  // On utilise flex-col et h-full pour que la video prenne la place restante sans dépasser
   return `
     <div class="flex h-full bg-slate-900 fade-in">
-        <!-- Sidebar Programme (Large) -->
         <aside class="w-[340px] bg-slate-950 border-r border-white/5 flex flex-col hidden lg:flex">
             <div class="p-8 border-b border-white/10"><h2 class="text-orange-500 font-black uppercase tracking-[0.3em] text-xs">Programme</h2></div>
             <div id="classroom-sidebar-content" class="flex-1 overflow-y-auto custom-scrollbar p-3">
@@ -371,15 +394,9 @@ function renderClassroom() {
             </div>
         </aside>
 
-        <!-- Player Area -->
         <div class="flex-1 flex flex-col relative h-full overflow-hidden">
-            <!-- Main Flex Container -->
             <div class="flex-1 flex flex-col bg-slate-900 p-6 lg:p-10 overflow-hidden">
-                
-                <!-- Center Wrapper -->
                 <div class="w-full max-w-6xl mx-auto flex flex-col h-full">
-                    
-                    <!-- VIDEO (Flexible Height) -->
                     <div class="flex-1 min-h-0 flex flex-col justify-center mb-6">
                        <div class="w-full aspect-video video-frame shadow-2xl mx-auto max-h-full">
                             ${currentLesson.wistiaId ? `
@@ -389,8 +406,6 @@ function renderClassroom() {
                             `}
                        </div>
                     </div>
-                    
-                    <!-- FOOTER CONTROLS (Fixed Height) -->
                     <div class="flex-shrink-0 flex flex-col md:flex-row md:items-center justify-between gap-6 text-white pb-2">
                         <div>
                             <div class="flex items-center gap-3 mb-2"><h1 class="text-3xl font-black truncate">${currentLesson.title}</h1>${currentLesson.validationRequired ? '<span title="Validation requise" class="text-2xl filter drop-shadow-md">🎯</span>' : ''}</div>
@@ -402,7 +417,6 @@ function renderClassroom() {
                                 ${currentUser.validatedLessons?.includes(currentLesson.id) ? 
                                 `<div class="px-8 py-3 rounded-xl font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/50 flex items-center gap-2"><i data-lucide="check-circle" class="w-5 h-5"></i> Validé</div>` 
                                 : 
-                                // BOUTON WHATSAPP "SACRÉ" (Non cliquable, Premium)
                                 `<button class="relative bg-slate-900 text-amber-500 px-8 py-3 rounded-xl font-black border border-amber-500/40 shadow-[0_0_20px_rgba(245,158,11,0.2)] opacity-90 cursor-default flex items-center gap-3">
                                     <i data-lucide="smartphone" class="w-5 h-5"></i> 
                                     <span>Validation sur Mobile</span>
@@ -414,7 +428,6 @@ function renderClassroom() {
                 </div>
             </div>
             
-            <!-- Notes Drawer (Persistent) -->
             <div id="notes-drawer" class="fixed inset-y-0 right-0 w-full md:w-[500px] bg-white shadow-2xl z-[80] transform transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${state.isNotesOpen ? 'translate-x-0' : 'translate-x-full'} flex flex-col">
                 <div class="p-6 border-b flex justify-between items-center bg-slate-50">
                     <h3 class="text-xl font-black text-slate-900 flex items-center gap-2"><i data-lucide="book-open" class="text-orange-500"></i> Notes de cours</h3>
@@ -432,52 +445,187 @@ function renderClassroom() {
   `;
 }
 
+// --- DASHBOARD HELPERS ---
+
+function calculateDashboardStats(user) {
+    // 1. Progression Globale
+    const allCheckpoints = state.modules.flatMap(m => m.lessons.filter(l => l.validationRequired));
+    const totalChecks = allCheckpoints.length;
+    const doneChecks = user.validatedLessons.length;
+    const remaining = totalChecks - doneChecks;
+    const percent = totalChecks > 0 ? Math.round((doneChecks / totalChecks) * 100) : 0;
+    
+    // 2. Vélocité (Checkpoints validés les 30 derniers jours)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const recentValidations = (user.history || []).filter(h => new Date(h.date) >= thirtyDaysAgo);
+    const velocity = recentValidations.length;
+    
+    // Comparaison (Moyenne arbitraire pour la démo: 2 validations / mois)
+    const average = 2; 
+    let velocityMsg = "Rythme tranquille";
+    let velocityColor = "text-slate-500";
+    if (velocity >= average) { velocityMsg = "Rythme soutenu"; velocityColor = "text-emerald-500"; }
+    if (velocity >= average * 2) { velocityMsg = "Rythme ÉLITE 🔥"; velocityColor = "text-amber-500"; }
+    
+    // 3. Prochaines Dates (Estimation)
+    const startDate = new Date(user.startDate);
+    let cumulativeWeeks = 0;
+    const timeline = state.modules.map(m => {
+        const estimatedDate = new Date(startDate);
+        estimatedDate.setDate(estimatedDate.getDate() + (cumulativeWeeks * 7));
+        cumulativeWeeks += m.estimatedWeeks || 0;
+        
+        // Est-ce que le module est terminé ? (Toutes les leçons validées)
+        const moduleCheckpoints = m.lessons.filter(l => l.validationRequired).map(l => l.id);
+        const isModuleDone = moduleCheckpoints.length > 0 && moduleCheckpoints.every(id => user.validatedLessons.includes(id));
+        
+        return {
+            title: m.title,
+            date: estimatedDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }),
+            isDone: isModuleDone,
+            isNext: !isModuleDone 
+        };
+    });
+
+    // 4. Historique Récent (enrichi)
+    const recentHistory = (user.history || [])
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 5)
+        .map(h => {
+            const lesson = state.modules.flatMap(m => m.lessons).find(l => l.id === h.lessonId);
+            return {
+                title: lesson ? lesson.title : 'Leçon inconnue',
+                date: new Date(h.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })
+            };
+        });
+
+    return { percent, remaining, velocity, velocityMsg, velocityColor, average, timeline, recentHistory };
+}
+
 function renderDashboard() {
   const user = getCurrentUser();
-  // Récupération dynamique de la leçon active pour le bouton "Reprendre"
   const currentLesson = findLesson(state.activeLessonId) || state.modules[0].lessons[0];
+  const stats = calculateDashboardStats(user);
+
+  // SVG Gauge calculations
+  const radius = 70;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (stats.percent / 100) * circumference;
 
   return `
     <div class="h-full overflow-y-auto p-8 lg:p-12 bg-slate-50 fade-in">
-        <header class="mb-12 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div><h1 class="text-4xl lg:text-6xl font-black text-slate-900 mb-4">Bonjour ${user.name.split(' ')[0]}</h1><p class="text-xl text-slate-500">Prêt à faire sonner votre guitare aujourd'hui ?</p></div>
+        <header class="mb-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div><h1 class="text-4xl lg:text-5xl font-black text-slate-900 mb-2">Tableau de Bord</h1><p class="text-lg text-slate-500">Vue d'ensemble de votre parcours.</p></div>
             ${user.role === 'admin' ? '<span class="bg-indigo-900 text-white px-4 py-2 rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-indigo-200">Mode Formateur</span>' : ''}
         </header>
-        <div class="grid grid-cols-12 gap-8">
-            <div class="col-span-12 lg:col-span-8 bg-white p-10 rounded-[2.5rem] shadow-premium border border-slate-100 relative overflow-hidden group cursor-pointer" onclick="setView('classroom')">
-                <div class="relative z-10 max-w-lg">
+
+        <div class="grid grid-cols-12 gap-8 pb-20">
+            
+            <!-- 1. CARTE DE REPRISE (Main Action) -->
+            <div class="col-span-12 lg:col-span-8 bg-white p-8 lg:p-10 rounded-[2.5rem] shadow-premium border border-slate-100 relative overflow-hidden group cursor-pointer flex flex-col justify-center" onclick="setView('classroom')">
+                <div class="relative z-10 max-w-xl">
                     <span class="bg-indigo-50 text-indigo-600 px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest mb-6 inline-block">
-                        ${currentLesson.validationRequired ? 'Checkpoint à valider' : 'Reprendre'}
+                        ${currentLesson.validationRequired ? 'Priorité : Checkpoint' : 'Reprendre le cours'}
                     </span>
-                    <h2 class="text-4xl font-black text-slate-900 mb-6 leading-tight line-clamp-2">${currentLesson.title}</h2>
-                    <p class="text-slate-500 text-lg mb-8 font-medium truncate">${currentLesson.subtitle}</p>
-                    <button class="bg-slate-900 text-white px-8 py-4 rounded-xl font-black flex items-center gap-3 hover:gap-5 transition-all shadow-xl">Continuer <i data-lucide="arrow-right"></i></button>
+                    <h2 class="text-3xl lg:text-4xl font-black text-slate-900 mb-4 leading-tight">${currentLesson.title}</h2>
+                    <p class="text-slate-500 text-lg mb-8 font-medium line-clamp-2">${currentLesson.subtitle}</p>
+                    <button class="bg-slate-900 text-white px-8 py-4 rounded-xl font-black flex items-center gap-3 hover:gap-5 transition-all shadow-xl w-fit">Accéder <i data-lucide="arrow-right"></i></button>
                 </div>
-                <img src="https://picsum.photos/seed/guitar/600/400" class="absolute right-0 top-0 h-full w-1/2 object-cover opacity-20 mask-image-gradient group-hover:scale-105 transition-transform duration-700" style="mask-image: linear-gradient(to right, transparent, black);" />
+                <img src="https://picsum.photos/seed/guitar/600/400" class="absolute right-0 top-0 h-full w-1/2 object-cover opacity-10 mask-image-gradient group-hover:scale-105 transition-transform duration-700" style="mask-image: linear-gradient(to right, transparent, black);" />
             </div>
-            <div class="col-span-12 lg:col-span-4 bg-orange-500 p-10 rounded-[2.5rem] shadow-xl text-white flex flex-col justify-between relative overflow-hidden">
-                <div class="relative z-10"><div class="flex justify-between items-start mb-4"><div class="p-3 bg-white/20 rounded-2xl backdrop-blur-sm"><i data-lucide="activity" class="w-8 h-8 text-white"></i></div><span class="text-5xl font-black">${user.progression}%</span></div><p class="text-orange-100 font-bold text-lg">Progression Globale</p></div>
-                <div class="relative z-10 mt-8"><div class="w-full bg-black/20 h-3 rounded-full overflow-hidden"><div class="bg-white h-full rounded-full" style="width: ${user.progression}%"></div></div></div>
-                <i data-lucide="award" class="absolute -bottom-6 -right-6 w-40 h-40 text-orange-400 opacity-50 rotate-12"></i>
+
+            <!-- 2. JAUGE GLOBALE (Visual Progression) -->
+            <div class="col-span-12 md:col-span-6 lg:col-span-4 bg-orange-500 p-8 rounded-[2.5rem] shadow-xl text-white flex flex-col items-center justify-center relative overflow-hidden text-center">
+                <div class="relative z-10 w-48 h-48 mb-6">
+                    <!-- SVG Circle Progress -->
+                    <svg class="w-full h-full transform -rotate-90" viewBox="0 0 160 160">
+                        <circle cx="80" cy="80" r="${radius}" stroke="rgba(255,255,255,0.2)" stroke-width="12" fill="none" />
+                        <circle cx="80" cy="80" r="${radius}" stroke="white" stroke-width="12" fill="none" stroke-dasharray="${circumference}" stroke-dashoffset="${strokeDashoffset}" stroke-linecap="round" class="transition-all duration-1000 ease-out" />
+                    </svg>
+                    <div class="absolute inset-0 flex flex-col items-center justify-center">
+                        <span class="text-5xl font-black">${stats.percent}%</span>
+                        <span class="text-xs font-bold uppercase tracking-widest text-orange-200">Global</span>
+                    </div>
+                </div>
+                <div class="relative z-10">
+                    <p class="text-2xl font-black mb-1">${stats.remaining} Étapes</p>
+                    <p class="text-orange-100 text-sm font-bold opacity-80">restantes à valider</p>
+                </div>
+                <i data-lucide="target" class="absolute -bottom-10 -right-10 w-48 h-48 text-orange-400 opacity-20 rotate-12"></i>
             </div>
+
+            <!-- 3. COMPTEUR DE VITESSE (Velocity) -->
+            <div class="col-span-12 md:col-span-6 lg:col-span-4 bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-xl flex flex-col relative overflow-hidden">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="p-3 bg-emerald-100 text-emerald-600 rounded-xl"><i data-lucide="gauge" class="w-6 h-6"></i></div>
+                    <h3 class="font-black text-slate-900 text-lg">Votre Rythme</h3>
+                </div>
+                
+                <div class="flex-1 flex flex-col items-center justify-center py-4">
+                    <!-- Speedometer Visual (Half Circle) -->
+                    <div class="relative w-48 h-24 overflow-hidden mb-4">
+                        <div class="absolute w-48 h-48 bg-slate-100 rounded-full border-[16px] border-slate-100 box-border"></div>
+                        <div class="absolute w-48 h-48 rounded-full border-[16px] border-transparent border-t-emerald-500 box-border transition-all duration-1000 ease-out" style="transform: rotate(${(stats.velocity / (stats.average * 2)) * 180 - 45}deg); transform-origin: 50% 50%;"></div>
+                        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-2 h-12 bg-slate-800 origin-bottom rounded-full transition-all duration-1000" style="transform: rotate(${(Math.min(stats.velocity, stats.average * 2.5) / (stats.average * 2.5)) * 180 - 90}deg);"></div>
+                        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-4 h-4 bg-slate-800 rounded-full"></div>
+                    </div>
+                    <div class="text-center">
+                        <p class="text-3xl font-black text-slate-900">${stats.velocity} <span class="text-sm text-slate-400 font-bold uppercase">Validations / 30j</span></p>
+                        <p class="text-sm font-bold ${stats.velocityColor} mt-1">${stats.velocityMsg}</p>
+                    </div>
+                </div>
+                <p class="text-xs text-center text-slate-400 mt-4">Moyenne de la communauté : ${stats.average} val./mois</p>
+            </div>
+
+            <!-- 4. HISTORIQUE & TIMELINE (Timeline) -->
+            <div class="col-span-12 lg:col-span-4 bg-slate-100 p-8 rounded-[2.5rem] border border-slate-200 flex flex-col">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="p-3 bg-white text-slate-600 rounded-xl shadow-sm"><i data-lucide="history" class="w-6 h-6"></i></div>
+                    <h3 class="font-black text-slate-900 text-lg">Dernières Victoires</h3>
+                </div>
+                <div class="space-y-4 flex-1 overflow-y-auto pr-2 custom-scrollbar max-h-[250px]">
+                    ${stats.recentHistory.length > 0 ? stats.recentHistory.map(h => `
+                        <div class="flex items-center gap-4 p-4 bg-white rounded-2xl shadow-sm border border-slate-200/50">
+                            <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-xs"><i data-lucide="check" class="w-5 h-5"></i></div>
+                            <div class="flex-1 min-w-0">
+                                <p class="text-sm font-bold text-slate-800 truncate">${h.title}</p>
+                                <p class="text-xs font-bold text-slate-400 uppercase">Validé le ${h.date}</p>
+                            </div>
+                        </div>
+                    `).join('') : '<p class="text-center text-slate-400 py-4 italic">Aucune validation récente.</p>'}
+                </div>
+            </div>
+
+            <!-- 5. PREVISIONNEL (Estimated Dates) -->
+            <div class="col-span-12 bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-premium">
+                <div class="flex items-center gap-3 mb-8">
+                    <div class="p-3 bg-indigo-50 text-indigo-600 rounded-xl"><i data-lucide="calendar-days" class="w-6 h-6"></i></div>
+                    <div><h3 class="font-black text-slate-900 text-lg">Votre Planning Prévisionnel</h3><p class="text-slate-400 text-xs font-bold uppercase tracking-wide">Estimations basées sur votre date de départ</p></div>
+                </div>
+                <div class="flex flex-nowrap overflow-x-auto gap-8 pb-4 custom-scrollbar">
+                    ${stats.timeline.map((item, index) => `
+                        <div class="flex-shrink-0 w-64 p-6 rounded-2xl border-2 ${item.isDone ? 'border-emerald-100 bg-emerald-50' : (index === stats.timeline.findIndex(t => !t.isDone) ? 'border-indigo-100 bg-indigo-50 ring-2 ring-indigo-200' : 'border-slate-100 bg-white opacity-60')}">
+                            <div class="flex justify-between items-start mb-4">
+                                <span class="text-xs font-black uppercase tracking-widest ${item.isDone ? 'text-emerald-600' : 'text-slate-400'}">Chapitre ${index + 1}</span>
+                                ${item.isDone ? '<i data-lucide="check-circle-2" class="w-5 h-5 text-emerald-500"></i>' : ''}
+                            </div>
+                            <h4 class="font-bold text-slate-900 mb-2 truncate" title="${item.title}">${item.title}</h4>
+                            <div class="flex items-center gap-2 mt-4 text-xs font-bold ${item.isDone ? 'text-emerald-600' : 'text-indigo-500'}">
+                                <i data-lucide="clock" class="w-4 h-4"></i>
+                                <span>${item.isDone ? 'Terminé' : `Début est. : ${item.date}`}</span>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+
         </div>
     </div>`;
 }
 
-// Les autres fonctions restent identiques mais nécessaires pour le rendu complet
-function renderProfile() {
-    const user = getCurrentUser();
-    return `<div class="h-full flex items-center justify-center p-8 bg-slate-50 fade-in"><div class="bg-white p-12 rounded-[2.5rem] shadow-2xl max-w-lg w-full text-center border border-slate-100"><img src="${user.avatar}" class="w-32 h-32 rounded-3xl mx-auto mb-6 shadow-lg border-4 border-white" /><h2 class="text-3xl font-black text-slate-900 mb-1">${user.name}</h2><p class="text-slate-400 font-bold mb-8">${user.email}</p><div class="flex justify-center gap-6 mb-10"><div class="bg-orange-50 p-4 rounded-2xl"><span class="block text-2xl font-black text-orange-600">${user.points}</span><span class="text-xs font-bold uppercase text-orange-400">XP Points</span></div><div class="bg-indigo-50 p-4 rounded-2xl"><span class="block text-2xl font-black text-indigo-600">${user.progression}%</span><span class="text-xs font-bold uppercase text-indigo-400">Progrès</span></div></div><button onclick="logout()" class="w-full py-4 border-2 border-slate-200 text-slate-500 font-black rounded-xl hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all flex items-center justify-center gap-2"><i data-lucide="log-out" class="w-5 h-5"></i> Se déconnecter</button></div></div>`;
-}
-
-function renderStudentManagement() {
-    const students = state.users.filter(u => u.role === 'student');
-    const checkpoints = state.modules.flatMap(m => m.lessons.filter(l => l.validationRequired));
-    return `<div class="h-full bg-admin-grid p-8 lg:p-12 overflow-y-auto fade-in"><header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 max-w-6xl mx-auto gap-6"><div><h1 class="text-4xl font-black text-slate-900 mb-2">Mes Apprentis</h1><p class="text-slate-500 font-bold uppercase tracking-widest">Suivez et validez la progression</p></div><button onclick="document.getElementById('add-student-modal').classList.remove('hidden')" class="bg-indigo-600 text-white px-8 py-4 rounded-2xl font-black flex items-center gap-3 shadow-lg hover:scale-105 transition-all"><i data-lucide="user-plus" class="w-5 h-5"></i> Ajouter un élève</button></header><div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 max-w-6xl mx-auto">${students.map(student => { const studentValidated = student.validatedLessons || []; const nextCheckpoint = checkpoints.find(c => !studentValidated.includes(c.id)); return `<div class="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-xl flex flex-col h-full"><div class="flex items-center justify-between mb-6"><div class="flex items-center gap-4"><img src="${student.avatar}" class="w-14 h-14 rounded-2xl border-2 border-slate-50" /><div class="min-w-0"><h3 class="text-lg font-black text-slate-900 truncate">${student.name}</h3><p class="text-xs text-slate-400 font-bold truncate">${student.email}</p></div></div><button onclick="deleteUser(${student.id})" class="text-slate-300 hover:text-red-500"><i data-lucide="trash-2" class="w-5 h-5"></i></button></div><div class="mb-6"><div class="flex justify-between text-xs font-bold uppercase text-slate-400 mb-1"><span>Progression</span><span>${student.progression}%</span></div><div class="w-full bg-slate-100 h-2 rounded-full overflow-hidden"><div class="bg-indigo-500 h-full rounded-full" style="width: ${student.progression}%"></div></div></div><div class="bg-slate-50 rounded-xl p-4 flex-1 border border-slate-100"><h4 class="text-xs font-black uppercase text-slate-400 mb-3 tracking-widest flex items-center gap-2"><i data-lucide="flag" class="w-3 h-3"></i> Checkpoints</h4><div class="space-y-2">${checkpoints.map(cp => { const isDone = studentValidated.includes(cp.id); return `<div class="flex items-center justify-between p-2 rounded-lg ${isDone ? 'bg-emerald-50 border border-emerald-100' : 'bg-white border border-slate-200'}"><span class="text-xs font-bold ${isDone ? 'text-emerald-700' : 'text-slate-600'} truncate mr-2">${cp.title}</span><label class="switch scale-75 origin-right"><input type="checkbox" ${isDone ? 'checked' : ''} onchange="toggleStudentValidation(${student.id}, ${cp.id}, this.checked)"><span class="slider"></span></label></div>`; }).join('')}${checkpoints.length === 0 ? '<p class="text-xs text-slate-400 italic">Aucun checkpoint défini.</p>' : ''}</div></div>${nextCheckpoint ? `<div class="mt-4 p-3 bg-orange-50 rounded-xl border border-orange-100 flex items-center gap-3"><div class="bg-orange-100 p-2 rounded-lg text-orange-600"><i data-lucide="lock" class="w-4 h-4"></i></div><div><p class="text-[10px] uppercase font-bold text-orange-400">Actuellement bloqué à</p><p class="text-xs font-bold text-slate-800 line-clamp-1">${nextCheckpoint.title}</p></div></div>` : `<div class="mt-4 p-3 bg-emerald-50 rounded-xl border border-emerald-100 text-center"><p class="text-xs font-bold text-emerald-600">Tout est validé ! 🎉</p></div>`}</div>`; }).join('')}</div><div id="add-student-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4"><div class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onclick="this.parentElement.classList.add('hidden')"></div><div class="bg-white w-full max-w-md rounded-[2rem] p-8 relative z-10 shadow-2xl"><h3 class="text-2xl font-black text-slate-900 mb-6">Nouvel Apprenti</h3><form onsubmit="event.preventDefault(); createStudent(this.name.value, this.email.value, this.password.value);" class="space-y-4"><input name="name" type="text" required placeholder="Nom complet" class="w-full bg-slate-50 border p-3 rounded-xl font-bold"><input name="email" type="email" required placeholder="Email" class="w-full bg-slate-50 border p-3 rounded-xl font-bold"><input name="password" type="text" required placeholder="Mot de passe" class="w-full bg-slate-50 border p-3 rounded-xl font-bold"><button class="w-full bg-indigo-600 text-white py-4 rounded-xl font-black mt-2">Créer le compte</button></form></div></div></div>`;
-}
-
 function renderAdmin() {
-  return `<div class="h-full bg-admin-grid p-8 lg:p-12 overflow-y-auto pb-40 fade-in"><header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-16 max-w-5xl mx-auto gap-6"><div><h1 class="text-4xl lg:text-5xl font-black text-slate-900 mb-2">Contenu du Cours</h1><p class="text-lg text-slate-500 font-bold uppercase tracking-widest">Modifiez la structure</p></div><button onclick="addChapter()" class="bg-indigo-600 text-white px-6 py-3 lg:px-8 lg:py-4 rounded-2xl font-black flex items-center gap-3 shadow-lg shadow-indigo-200 hover:scale-105 transition-all"><i data-lucide="plus-circle" class="w-5 h-5"></i> Nouveau Chapitre</button></header><div class="space-y-12 max-w-5xl mx-auto">${state.modules.map(mod => `<div class="bg-white p-8 lg:p-10 rounded-[2.5rem] border border-slate-200 shadow-premium group/module"><div class="flex items-center justify-between mb-8 pb-6 border-b border-slate-100"><div class="flex-1 mr-4"><input type="text" value="${mod.title}" oninput="updateChapterTitle(${mod.id}, this.value)" class="w-full text-2xl lg:text-3xl font-black text-slate-900 bg-transparent outline-none focus:text-indigo-600 transition-colors placeholder:text-slate-200" placeholder="Titre du chapitre..." /></div><button onclick="deleteChapter(${mod.id})" class="text-slate-200 hover:text-red-500 hover:bg-red-50 p-3 rounded-xl transition-all"><i data-lucide="trash-2" class="w-6 h-6"></i></button></div><div class="space-y-4 pl-0 lg:pl-8 border-l-0 lg:border-l-2 border-slate-100">${mod.lessons.map(l => `<div class="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-transparent hover:border-indigo-200 hover:bg-indigo-50/30 transition-all group/lesson"><div class="flex items-center gap-5 overflow-hidden"><div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${l.status === 'locked' ? 'bg-slate-200 text-slate-400' : 'bg-emerald-100 text-emerald-600'}"><i data-lucide="${l.status === 'locked' ? 'lock' : 'check-circle'}" class="w-5 h-5"></i></div><div class="min-w-0 flex-1"><div class="flex items-center gap-2"><p class="text-lg font-bold text-slate-800 truncate">${l.title}</p>${l.validationRequired ? '<span title="Validation requise" class="text-lg filter drop-shadow-sm">🎯</span>' : ''}</div><div class="flex items-center gap-2 mt-1"><span class="text-[10px] font-black bg-white border border-slate-200 px-2 py-0.5 rounded text-slate-400 uppercase tracking-wider">${l.type}</span><span class="text-[10px] font-bold text-slate-400">${l.duration}</span></div></div></div><button onclick="openEditor(${l.id})" class="bg-white border-2 border-slate-200 px-5 py-2 rounded-xl font-black text-xs text-slate-600 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all shadow-sm whitespace-nowrap">ÉDITER</button></div>`).join('')}<button onclick="addLesson(${mod.id})" class="w-full py-5 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50/10 transition-all flex items-center justify-center gap-2 text-sm mt-4"><i data-lucide="plus" class="w-4 h-4"></i> Ajouter une leçon</button></div></div>`).join('')}</div>${state.editingLessonId ? renderLessonEditor() : ''}</div>`;
+  return `<div class="h-full bg-admin-grid p-8 lg:p-12 overflow-y-auto pb-40 fade-in"><header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-16 max-w-5xl mx-auto gap-6"><div><h1 class="text-4xl lg:text-5xl font-black text-slate-900 mb-2">Contenu du Cours</h1><p class="text-lg text-slate-500 font-bold uppercase tracking-widest">Modifiez la structure</p></div><button onclick="addChapter()" class="bg-indigo-600 text-white px-6 py-3 lg:px-8 lg:py-4 rounded-2xl font-black flex items-center gap-3 shadow-lg shadow-indigo-200 hover:scale-105 transition-all"><i data-lucide="plus-circle" class="w-5 h-5"></i> Nouveau Chapitre</button></header><div class="space-y-12 max-w-5xl mx-auto">${state.modules.map(mod => `<div class="bg-white p-8 lg:p-10 rounded-[2.5rem] border border-slate-200 shadow-premium group/module"><div class="flex items-center justify-between mb-8 pb-6 border-b border-slate-100"><div class="flex-1 mr-4"><input type="text" value="${mod.title}" oninput="updateChapterTitle(${mod.id}, this.value)" class="w-full text-2xl lg:text-3xl font-black text-slate-900 bg-transparent outline-none focus:text-indigo-600 transition-colors placeholder:text-slate-200" placeholder="Titre du chapitre..." /><div class="mt-2 flex items-center gap-2"><span class="text-xs font-bold text-slate-400 uppercase">Durée est. (semaines) :</span><input type="number" value="${mod.estimatedWeeks || 0}" oninput="updateChapterDuration(${mod.id}, this.value)" class="w-20 bg-slate-50 border border-slate-200 rounded-lg p-1 text-sm font-bold text-slate-700" /></div></div><button onclick="deleteChapter(${mod.id})" class="text-slate-200 hover:text-red-500 hover:bg-red-50 p-3 rounded-xl transition-all"><i data-lucide="trash-2" class="w-6 h-6"></i></button></div><div class="space-y-4 pl-0 lg:pl-8 border-l-0 lg:border-l-2 border-slate-100">${mod.lessons.map(l => `<div class="flex items-center justify-between p-5 bg-slate-50 rounded-2xl border border-transparent hover:border-indigo-200 hover:bg-indigo-50/30 transition-all group/lesson"><div class="flex items-center gap-5 overflow-hidden"><div class="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${l.status === 'locked' ? 'bg-slate-200 text-slate-400' : 'bg-emerald-100 text-emerald-600'}"><i data-lucide="${l.status === 'locked' ? 'lock' : 'check-circle'}" class="w-5 h-5"></i></div><div class="min-w-0 flex-1"><div class="flex items-center gap-2"><p class="text-lg font-bold text-slate-800 truncate">${l.title}</p>${l.validationRequired ? '<span title="Validation requise" class="text-lg filter drop-shadow-sm">🎯</span>' : ''}</div><div class="flex items-center gap-2 mt-1"><span class="text-[10px] font-black bg-white border border-slate-200 px-2 py-0.5 rounded text-slate-400 uppercase tracking-wider">${l.type}</span><span class="text-[10px] font-bold text-slate-400">${l.duration}</span></div></div></div><button onclick="openEditor(${l.id})" class="bg-white border-2 border-slate-200 px-5 py-2 rounded-xl font-black text-xs text-slate-600 hover:bg-slate-900 hover:text-white hover:border-slate-900 transition-all shadow-sm whitespace-nowrap">ÉDITER</button></div>`).join('')}<button onclick="addLesson(${mod.id})" class="w-full py-5 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 font-bold hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50/10 transition-all flex items-center justify-center gap-2 text-sm mt-4"><i data-lucide="plus" class="w-4 h-4"></i> Ajouter une leçon</button></div></div>`).join('')}</div>${state.editingLessonId ? renderLessonEditor() : ''}</div>`;
 }
 
 function renderLessonEditor() {
